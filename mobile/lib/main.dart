@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'core/theme.dart';
+import 'core/router.dart';
 
 void main() {
   runApp(const AgentOpsApp());
@@ -9,11 +11,11 @@ class AgentOpsApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       title: 'AgentOps Copilot',
-      home: Scaffold(
-        body: Center(child: Text('AgentOps Copilot — build in progress')),
-      ),
+      theme: AppTheme.light,
+      initialRoute: AppRoutes.onboarding,
+      onGenerateRoute: AppRouter.generateRoute,
     );
   }
 }
