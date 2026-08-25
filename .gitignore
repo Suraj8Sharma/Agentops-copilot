@@ -29,6 +29,8 @@ mobile/**/*.freezed.dart
 # supabase/migrations is a directory junction → backend/migrations (source of truth).
 # Ignore the junction so git tracks only backend/migrations/, not both.
 supabase/migrations
+# CLI cache / linked-project state — machine-local, not for VCS.
+supabase/.temp/
 
 # --- General ---
 .DS_Store
