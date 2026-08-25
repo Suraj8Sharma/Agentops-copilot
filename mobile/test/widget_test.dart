@@ -17,9 +17,9 @@ void main() {
     await tester.pumpWidget(const AgentOpsApp());
     await tester.pumpAndSettle();
 
-    // Lands on the Onboarding stub (AppRoutes.onboarding is the
-    // initialRoute set in main.dart).
-    expect(find.text('Onboarding / Splash'), findsOneWidget);
+    // The initial route presents the first onboarding slide after its
+    // static splash duration.
+    expect(find.text('Your work, with a copilot'), findsOneWidget);
   });
 
   testWidgets('App uses AppTheme.light', (tester) async {
