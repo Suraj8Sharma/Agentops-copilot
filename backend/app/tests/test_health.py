@@ -1,12 +1,10 @@
-﻿"""Tests for GET /health.
+"""Tests for GET /health.
 
 These tests use FastAPI'\''s TestClient (backed by httpx) so they run without
 a real Supabase connection.  The Supabase client import at module level is
 patched via monkeypatch / environment variables set before import time to
 prevent ``ValidationError`` from missing env vars.
 """
-
-import os
 
 import pytest
 from fastapi.testclient import TestClient
