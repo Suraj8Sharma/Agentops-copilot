@@ -1,8 +1,74 @@
-"""FastAPI entrypoint.
+﻿"""FastAPI entrypoint for AgentOps Copilot API.
 
-D1 scope: skeleton only, no routes yet. Config/env, health-check, and the
-Supabase connection land on D3 (Section 14 of the implementation manual).
+**Architecture overview**
+- ``core/config.py``       — pydantic-settings config loader (fails fast on
+                             missing required env vars)
+- ``db/supabase_client.py``— singleton Supabase client; startup probe runs
+                             in the lifespan hook below
+- ``api/routers/``         — one file per logical group; each exposes an
+                             ``APIRouter`` registered here
+
+**Running locally**
+    uvicorn app.main:app --reload
+
+**Swagger UI** (local only)
+    http://localhost:8000/docs
 """
+
+import logging
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 from fastapi import FastAPI
 
-app = FastAPI(title="AgentOps Copilot API")
+from app.api.routers import health
+from app.db.supabase_client import probe_connection
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Lifespan — startup / shutdown hooks
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: ARG001
+    """FastAPI lifespan context manager.
+
+    Runs **before** the server starts accepting requests (startup) and again
+    **after** the last request is handled (shutdown).
+    """
+    # ---- Startup ------------------------------------------------------------
+    logger.info("AgentOps Copilot API starting up…")
+    probe_connection()
+    logger.info("Startup complete — server ready.")
+
+    yield  # server is live here
+
+    # ---- Shutdown -----------------------------------------------------------
+    logger.info("AgentOps Copilot API shutting down.")
+
+
+# ---------------------------------------------------------------------------
+# App factory
+# ---------------------------------------------------------------------------
+app = FastAPI(
+    title="AgentOps Copilot API",
+    description=(
+        "Backend for AgentOps Copilot — "
+        "AI-powered mobile DevOps companion."
+    ),
+    version="0.1.0",
+    lifespan=lifespan,
+    # Disable docs in production via env var in a future day.
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# ---------------------------------------------------------------------------
+# Routers
+# ---------------------------------------------------------------------------
+app.include_router(health.router)
