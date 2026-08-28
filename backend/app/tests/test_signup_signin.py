@@ -1,4 +1,4 @@
-﻿"""Tests for POST /auth/signup and POST /auth/login.
+"""Tests for POST /auth/signup and POST /auth/login.
 
 All tests run against a **mocked** Supabase client -- no real network calls,
 no production data touched.  The mock is applied at the supabase module level
@@ -20,7 +20,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
-
 
 # ---------------------------------------------------------------------------
 # Helpers to build realistic Supabase-style response objects

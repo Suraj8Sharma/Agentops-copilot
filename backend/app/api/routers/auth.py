@@ -22,7 +22,7 @@ POST /auth/login
 
 import logging
 import re
-from typing import Annotated, Any
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, field_validator
