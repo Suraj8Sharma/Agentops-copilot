@@ -15,21 +15,26 @@ void main() {
     final taskList = find.byKey(const Key('home-task-list'));
     expect(taskList, findsOneWidget);
 
-    for (final status in TaskStatus.values) {
-      await tester.scrollUntilVisible(
-        find.text(status.label),
-        300,
-        scrollable: taskList,
-      );
-      expect(find.text(status.label), findsOneWidget);
+    Future<void> reveal(Finder finder, {bool reverse = false}) async {
+      for (var attempt = 0;
+          attempt < 12 && finder.evaluate().isEmpty;
+          attempt++) {
+        await tester.drag(
+          taskList,
+          Offset(0, reverse ? 400 : -300),
+        );
+        await tester.pumpAndSettle();
+      }
+      expect(finder, findsOneWidget);
     }
-    await tester.scrollUntilVisible(
+
+    for (final status in TaskStatus.values) {
+      await reveal(find.text(status.label));
+    }
+    await reveal(
       find.text('Find the latest project brief and summarize it'),
-      300,
-      scrollable: taskList,
+      reverse: true,
     );
-    expect(find.text('Find the latest project brief and summarize it'),
-        findsOneWidget);
   });
 
   testWidgets('create a task uses the task composer route', (tester) async {
