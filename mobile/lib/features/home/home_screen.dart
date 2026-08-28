@@ -202,6 +202,7 @@ class HomeScreen extends StatelessWidget {
                 child: tasks.isEmpty
                     ? const _EmptyTaskState()
                     : ListView.separated(
+                        key: const Key('home-task-list'),
                         itemCount: tasks.length,
                         separatorBuilder: (_, __) =>
                             const SizedBox(height: AppSpacing.sm),
