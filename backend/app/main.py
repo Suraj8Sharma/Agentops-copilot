@@ -1,4 +1,4 @@
-"""FastAPI entrypoint for AgentOps Copilot API.
+﻿"""FastAPI entrypoint for AgentOps Copilot API.
 
 **Architecture overview**
 - ``core/config.py``       — pydantic-settings config loader (fails fast on
@@ -21,7 +21,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-from app.api.routers import auth, health
+from app.api.routers import auth, health, me, tasks
 from app.db.supabase_client import probe_connection
 
 logging.basicConfig(
@@ -73,3 +73,5 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(me.router)
+app.include_router(tasks.router)
