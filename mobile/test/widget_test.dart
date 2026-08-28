@@ -11,15 +11,16 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:agentops_copilot/main.dart';
 import 'package:agentops_copilot/core/theme.dart';
+import 'package:agentops_copilot/features/onboarding/onboarding_screen.dart';
 
 void main() {
   testWidgets('App boots and renders the initial route', (tester) async {
     await tester.pumpWidget(const AgentOpsApp());
     await tester.pumpAndSettle();
 
-    // Lands on the Onboarding stub (AppRoutes.onboarding is the
-    // initialRoute set in main.dart).
-    expect(find.text('Onboarding / Splash'), findsOneWidget);
+    // The initial route is the onboarding flow. Its first slide may still be
+    // behind the static splash timer when this assertion runs.
+    expect(find.byType(OnboardingScreen), findsOneWidget);
   });
 
   testWidgets('App uses AppTheme.light', (tester) async {
