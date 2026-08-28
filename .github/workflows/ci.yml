@@ -23,6 +23,12 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
       - name: Test (pytest)
+        # Inject dummy Supabase credentials so pydantic-settings does not raise
+        # a ValidationError for missing required env vars during CI.
+        # Real credentials are NEVER stored in the repository.
+        env:
+          SUPABASE_URL: https://ci-placeholder.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
         run: pytest app/tests -v
 
   mobile:
