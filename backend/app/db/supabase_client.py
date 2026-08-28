@@ -1,4 +1,4 @@
-﻿"""Supabase client singleton for AgentOps Copilot backend.
+"""Supabase client singleton for AgentOps Copilot backend.
 
 Initializes the official ``supabase-py`` client once at module import time and
 exports a single shared ``supabase`` instance.  Do **not** call
@@ -42,19 +42,14 @@ def probe_connection() -> None:
     try:
         # A trivial RPC/select that returns at most 1 row — just proves the
         # network path and credentials are valid.
-        result = supabase.table("_prisma_migrations").select("id").limit(1).execute()
+        result = supabase.table("profiles").select("user_id").limit(1).execute()
         logger.info(
             "Supabase connection OK (response rows: %d)",
             len(result.data) if result.data else 0,
         )
     except Exception:
-        # ``_prisma_migrations`` may not exist on a fresh Supabase project —
-        # that is fine.  Any HTTP error (401, network timeout, etc.) will also
-        # land here and be re-raised.
         logger.warning(
-            "Supabase probe query failed — the table may not exist yet. "
-            "If this is a fresh project without migrations this is expected. "
-            "If you see 401/network errors, check SUPABASE_URL and "
+            "Supabase probe query failed — check SUPABASE_URL and "
             "SUPABASE_SERVICE_ROLE_KEY in your .env file.",
             exc_info=True,
         )
