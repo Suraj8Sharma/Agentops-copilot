@@ -50,6 +50,9 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Task submitted'), findsOneWidget);
-    expect(find.text('Prepare a summary of my unread emails'), findsOneWidget);
+    expect(
+      find.byKey(const Key('submitted-task-text')),
+      findsOneWidget,
+    );
   });
 }

@@ -207,6 +207,7 @@ class _SubmissionFeedback extends StatelessWidget {
                 if (task != null) ...<Widget>[
                   const SizedBox(height: AppSpacing.sm),
                   Text(
+                    key: const Key('submitted-task-text'),
                     task!.rawInput,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
