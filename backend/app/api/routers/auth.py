@@ -220,3 +220,73 @@ def login(payload: AuthRequest) -> Any:
         access_token=session.access_token,
         refresh_token=session.refresh_token,
     )
+
+
+# ---------------------------------------------------------------------------
+# Token refresh
+# ---------------------------------------------------------------------------
+
+
+class RefreshRequest(BaseModel):
+    """Request body for the token refresh endpoint."""
+
+    refresh_token: str
+
+
+class RefreshResponse(BaseModel):
+    """Response schema for a successful token refresh."""
+
+    access_token: str
+    refresh_token: str
+
+
+@router.post(
+    "/refresh",
+    response_model=RefreshResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Refresh the access token",
+    description=(
+        "Exchanges a valid refresh token for a new access token + refresh "
+        "token pair.  Use this when the access token has expired "
+        "(``X-Token-Expired: true`` header on the previous 401 response). "
+        "Returns **401** if the refresh token is invalid or already used."
+    ),
+)
+def refresh_token(payload: RefreshRequest) -> Any:
+    """Issue a new access token using a refresh token.
+
+    Args:
+        payload: ``{refresh_token}`` -- the refresh token from a previous
+                 login or refresh response.
+
+    Returns:
+        RefreshResponse with a fresh ``access_token`` and ``refresh_token``.
+
+    Raises:
+        HTTPException(401): Refresh token invalid or expired.
+    """
+    logger.info("Token refresh attempt")
+
+    try:
+        response = supabase.auth.refresh_session(payload.refresh_token)
+    except Exception as exc:
+        error_msg = _extract_supabase_error(exc)
+        logger.warning("Token refresh failed -- %s", error_msg)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token.",
+        ) from exc
+
+    session = response.session
+    if session is None:
+        logger.error("Supabase refresh returned no session")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token refresh failed -- no session returned.",
+        )
+
+    logger.info("Token refresh successful")
+    return RefreshResponse(
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+    )
