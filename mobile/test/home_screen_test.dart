@@ -23,7 +23,7 @@ void main() {
   testWidgets('create a task uses the task composer route', (tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.light,
-      home: const HomeScreen(),
+      home: HomeScreen(),
       onGenerateRoute: (settings) => MaterialPageRoute<void>(
         settings: settings,
         builder: (_) => const Placeholder(key: Key('task-composer-page')),
