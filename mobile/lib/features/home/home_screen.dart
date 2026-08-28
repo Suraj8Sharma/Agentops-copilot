@@ -108,7 +108,7 @@ extension TaskStatusPresentation on TaskStatus {
   }
 }
 
-const List<MockTask> mockTasks = <MockTask>[
+final List<MockTask> mockTasks = <MockTask>[
   MockTask(
     id: 'task-submitted',
     inputType: 'text',
