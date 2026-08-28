@@ -14,8 +14,18 @@ void main() {
     await tester.pumpWidget(home());
 
     for (final status in TaskStatus.values) {
+      await tester.scrollUntilVisible(
+        find.text(status.label),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text(status.label), findsOneWidget);
     }
+    await tester.scrollUntilVisible(
+      find.text('Find the latest project brief and summarize it'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Find the latest project brief and summarize it'),
         findsOneWidget);
   });
