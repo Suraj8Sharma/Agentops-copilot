@@ -163,7 +163,8 @@ final List<MockTask> mockTasks = <MockTask>[
 ];
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, this.tasks = mockTasks});
+  const HomeScreen({super.key, List<MockTask>? tasks})
+      : tasks = tasks ?? mockTasks;
 
   final List<MockTask> tasks;
 
