@@ -1,4 +1,4 @@
-﻿"""Configuration loader for AgentOps Copilot backend.
+"""Configuration loader for AgentOps Copilot backend.
 
 Reads environment variables using pydantic-settings and validates that all
 required values are present at startup. Import the singleton ``settings``
@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     GOOGLE_OAUTH_CLIENT_SECRET: str = ""
+    GOOGLE_OAUTH_REDIRECT_URI: str = ""
     GITHUB_OAUTH_CLIENT_ID: str = ""
     GITHUB_OAUTH_CLIENT_SECRET: str = ""
     SLACK_CLIENT_ID: str = ""
