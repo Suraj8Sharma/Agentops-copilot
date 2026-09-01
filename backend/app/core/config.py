@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     GITHUB_OAUTH_CLIENT_SECRET: str = ""
     SLACK_CLIENT_ID: str = ""
     SLACK_CLIENT_SECRET: str = ""
+    ENCRYPTION_KEY: str = ""
 
     # -------------------------------------------------------------------------
     # Firebase / Render — required from D24 / D34 (placeholders today)
