@@ -175,9 +175,11 @@ class PlanViewScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Agent Plan View')),
       body: SafeArea(
-        child: ListView(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppSpacing.screenPadding),
-          children: <Widget>[
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
             Text('Your copilot\'s plan',
                 style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: AppSpacing.xs),
@@ -198,6 +200,7 @@ class PlanViewScreen extends StatelessWidget {
                     ),
                   ),
           ],
+          ),
         ),
       ),
     );
