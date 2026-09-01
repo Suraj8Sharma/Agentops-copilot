@@ -231,45 +231,49 @@ class _TaskTile extends StatelessWidget {
     final status = task.status;
     return Card(
       key: Key(task.id),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Icon(status.icon, color: status.color),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(displayInput,
-                      style: Theme.of(context).textTheme.bodyLarge),
-                  const SizedBox(height: AppSpacing.sm),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
-                        vertical: AppSpacing.xs,
-                      ),
-                      decoration: BoxDecoration(
-                        color: status.backgroundColor,
-                        borderRadius:
-                            BorderRadius.circular(AppSpacing.buttonRadius),
-                      ),
-                      child: Text(
-                        status.label,
-                        style:
-                            Theme.of(context).textTheme.labelMedium?.copyWith(
-                                  color: status.color,
-                                ),
+      child: InkWell(
+        onTap: () => Navigator.of(context).pushNamed(AppRoutes.planView),
+        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(status.icon, color: status.color),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(displayInput,
+                        style: Theme.of(context).textTheme.bodyLarge),
+                    const SizedBox(height: AppSpacing.sm),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                          vertical: AppSpacing.xs,
+                        ),
+                        decoration: BoxDecoration(
+                          color: status.backgroundColor,
+                          borderRadius:
+                              BorderRadius.circular(AppSpacing.buttonRadius),
+                        ),
+                        child: Text(
+                          status.label,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(color: status.color),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
