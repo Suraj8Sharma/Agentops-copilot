@@ -61,6 +61,21 @@ def _clear_overrides():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _mock_settings():
+    """Ensure required OAuth config is set for all tests in this file.
+    
+    In CI environments, .env is not present, so GOOGLE_OAUTH_CLIENT_ID
+    and GOOGLE_OAUTH_REDIRECT_URI would default to "" and trigger 500 errors.
+    """
+    with patch("app.api.routers.oauth.settings") as mock_settings:
+        mock_settings.GOOGLE_OAUTH_CLIENT_ID = "test-client-id"
+        mock_settings.GOOGLE_OAUTH_REDIRECT_URI = "http://localhost:8000/oauth/google/callback"
+        mock_settings.SUPABASE_JWT_SECRET = "test-jwt-secret-for-hmac-signing"
+        yield mock_settings
+
+
+
 # ---------------------------------------------------------------------------
 # §10 Required acceptance test
 # ---------------------------------------------------------------------------
@@ -178,25 +193,22 @@ def test_oauth_connect_requires_auth_returns_401() -> None:
     assert response.status_code == 401
 
 
-def test_oauth_connect_missing_client_id_returns_500() -> None:
+def test_oauth_connect_missing_client_id_returns_500(_mock_settings) -> None:
     """Missing GOOGLE_OAUTH_CLIENT_ID must produce a loud 500."""
+    _mock_settings.GOOGLE_OAUTH_CLIENT_ID = ""
     client = _authed_client()
-    with patch("app.api.routers.oauth.settings") as mock_settings:
-        mock_settings.GOOGLE_OAUTH_CLIENT_ID = ""
-        mock_settings.GOOGLE_OAUTH_REDIRECT_URI = "http://localhost:8000/oauth/google/callback"
-        response = client.get("/oauth/google/connect")
+    response = client.get("/oauth/google/connect")
 
     assert response.status_code == 500
     assert "not configured" in response.json()["detail"].lower()
 
 
-def test_oauth_connect_missing_redirect_uri_returns_500() -> None:
+def test_oauth_connect_missing_redirect_uri_returns_500(_mock_settings) -> None:
     """Missing GOOGLE_OAUTH_REDIRECT_URI must produce a loud 500."""
+    _mock_settings.GOOGLE_OAUTH_REDIRECT_URI = ""
     client = _authed_client()
-    with patch("app.api.routers.oauth.settings") as mock_settings:
-        mock_settings.GOOGLE_OAUTH_CLIENT_ID = "some-client-id"
-        mock_settings.GOOGLE_OAUTH_REDIRECT_URI = ""
-        response = client.get("/oauth/google/connect")
+    response = client.get("/oauth/google/connect")
 
     assert response.status_code == 500
     assert "not configured" in response.json()["detail"].lower()
+
