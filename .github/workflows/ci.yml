@@ -50,5 +50,7 @@ jobs:
         run: flutter test test/auth_design_qa_test.dart
       - name: Agent plan view widget tests
         run: flutter test test/plan_view_screen_test.dart
+      - name: Approval screen widget tests (safety-critical)
+        run: flutter test test/approval_screen_test.dart
       - name: Test (flutter test)
         run: flutter test
