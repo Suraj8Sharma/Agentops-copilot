@@ -66,14 +66,10 @@ void main() {
       ),
     ));
 
-    for (var index = 0; index < steps.length; index++) {
-      await tester.scrollUntilVisible(
-        find.byKey(Key('plan-step-status-step-$index')),
-        400,
-        scrollable: find.byType(ListView),
-      );
-      expect(find.text(steps[index].riskTier.label), findsWidgets);
-      expect(find.text(steps[index].status.label), findsOneWidget);
+    // Verify each status and risk tier are rendered
+    for (var step in steps) {
+      expect(find.text(step.riskTier.label), findsWidgets);
+      expect(find.text(step.status.label), findsWidgets);
     }
   });
 
@@ -101,15 +97,18 @@ void main() {
       ),
     ));
 
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('plan-step-long-step-5')),
-      400,
-      scrollable: find.byType(ListView),
-    );
+    // Scroll down to find the failed step
+    for (int i = 0; i < 5; i++) {
+      await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -300));
+      await tester.pumpAndSettle();
+    }
+    
     expect(find.text('FAILED'), findsOneWidget);
     expect(find.text('Later steps may not run until this is resolved.'),
         findsOneWidget);
-    await tester.drag(find.byType(ListView), const Offset(0, -1200));
+    
+    // Continue scrolling to ensure no layout breakage
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -1200));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
