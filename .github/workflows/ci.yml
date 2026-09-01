@@ -46,5 +46,9 @@ jobs:
         run: flutter pub get
       - name: Lint (flutter analyze)
         run: flutter analyze
+      - name: Auth design QA widget tests
+        run: flutter test test/auth_design_qa_test.dart
+      - name: Agent plan view widget tests
+        run: flutter test test/plan_view_screen_test.dart
       - name: Test (flutter test)
         run: flutter test

@@ -4,6 +4,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
+
 class ScreenStub extends StatelessWidget {
   const ScreenStub({
     super.key,
@@ -17,7 +19,12 @@ class ScreenStub extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        backgroundColor: AppColors.neutral0,
+        foregroundColor: AppColors.neutral900,
+        elevation: 0,
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
