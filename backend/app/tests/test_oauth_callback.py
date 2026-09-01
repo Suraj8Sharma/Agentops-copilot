@@ -9,15 +9,13 @@ Required tests (spec §9)
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-from urllib.parse import urlencode
 
 import pytest
-from fastapi.testclient import TestClient
-import httpx
 from cryptography.fernet import Fernet
+from fastapi.testclient import TestClient
 
-from app.core.security import CurrentUser, get_current_user
 from app.core.config import settings
+from app.core.security import CurrentUser, get_current_user
 from app.main import app
 
 # ---------------------------------------------------------------------------
@@ -52,13 +50,16 @@ def mock_supabase_table():
         mock_client_instance = MagicMock()
         mock_create_client.return_value = mock_client_instance
         
-        mock_table = MagicMock()
-        mock_client_instance.table.return_value = mock_table
+        mock_table_method = MagicMock()
+        mock_client_instance.table = mock_table_method
+        
+        mock_table_instance = MagicMock()
+        mock_table_method.return_value = mock_table_instance
         
         mock_upsert = MagicMock()
-        mock_table.upsert.return_value = mock_upsert
+        mock_table_instance.upsert.return_value = mock_upsert
         
-        yield mock_table
+        yield mock_table_method
 
 
 @pytest.fixture
@@ -75,7 +76,7 @@ def mock_httpx_post():
             "access_token": "mock_google_access_token",
             "refresh_token": "mock_google_refresh_token",
             "expires_in": 3600,
-            "scope": "https://www.googleapis.com/auth/calendar.events"
+            "scope": "https://www.googleapis.com/auth/calendar.events",
         }
         mock_response.raise_for_status = MagicMock()
         mock_post.return_value = mock_response
@@ -86,23 +87,19 @@ def mock_httpx_post():
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_oauth_callback_exchanges_code_for_token(
-    mock_encryption_key,
-    mock_supabase_table,
-    mock_verify_state,
-    mock_httpx_post
+    mock_encryption_key, mock_supabase_table, mock_verify_state, mock_httpx_post
 ) -> None:
     """Asserts the backend successfully trades the code for tokens and upserts them."""
-    
+
     client = _authed_client()
-    
-    response = client.get(
-        "/oauth/google/callback?code=mock_auth_code&state=mock_valid_state"
-    )
-    
+
+    response = client.get("/oauth/google/callback?code=mock_auth_code&state=mock_valid_state")
+
     assert response.status_code == 200
     assert response.json() == {"message": "OAuth connection successful"}
-    
+
     # Verify the code exchange call
     mock_httpx_post.assert_called_once()
     args, kwargs = mock_httpx_post.call_args
@@ -114,14 +111,14 @@ def test_oauth_callback_exchanges_code_for_token(
     mock_supabase_table.assert_called_once_with("oauth_connections")
     upsert_mock = mock_supabase_table().upsert
     upsert_mock.assert_called_once()
-    
+
     # We should have inserted two rows (google_calendar and gmail)
     records = upsert_mock.call_args[0][0]
     assert len(records) == 2
-    
+
     providers = {r["provider"] for r in records}
     assert providers == {"google_calendar", "gmail"}
-    
+
     for r in records:
         assert r["user_id"] == _FAKE_USER.id
         assert r["status"] == "active"
@@ -129,38 +126,33 @@ def test_oauth_callback_exchanges_code_for_token(
 
 
 def test_oauth_token_encrypted_at_rest(
-    mock_encryption_key,
-    mock_supabase_table,
-    mock_verify_state,
-    mock_httpx_post
+    mock_encryption_key, mock_supabase_table, mock_verify_state, mock_httpx_post
 ) -> None:
     """Asserts that the tokens sent to the database are encrypted and decryptable."""
-    
+
     client = _authed_client()
-    
-    response = client.get(
-        "/oauth/google/callback?code=mock_auth_code&state=mock_valid_state"
-    )
+
+    response = client.get("/oauth/google/callback?code=mock_auth_code&state=mock_valid_state")
     assert response.status_code == 200
-    
+
     # Grab what was passed to supabase.table().upsert()
     upsert_mock = mock_supabase_table().upsert
     records = upsert_mock.call_args[0][0]
     record = records[0]
-    
+
     encrypted_access = record["access_token"]
     encrypted_refresh = record["refresh_token"]
-    
+
     # 1. Ensure the raw string isn't the one saved
     assert encrypted_access != "mock_google_access_token"
     assert encrypted_refresh != "mock_google_refresh_token"
-    
+
     # 2. Ensure we can decrypt it back to the original using the backend key
     fernet = Fernet(mock_encryption_key.encode())
-    
+
     decrypted_access = fernet.decrypt(encrypted_access.encode()).decode()
     decrypted_refresh = fernet.decrypt(encrypted_refresh.encode()).decode()
-    
+
     assert decrypted_access == "mock_google_access_token"
     assert decrypted_refresh == "mock_google_refresh_token"
 
@@ -168,9 +160,9 @@ def test_oauth_token_encrypted_at_rest(
 def test_oauth_callback_invalid_state_rejected() -> None:
     """Asserts a tampered or missing state token blocks the flow."""
     client = _authed_client()
-    
+
     response = client.get("/oauth/google/callback?code=mock_code&state=tampered.state")
-    
+
     assert response.status_code == 400
     assert "Invalid state token" in response.json()["detail"]
 
@@ -178,10 +170,8 @@ def test_oauth_callback_invalid_state_rejected() -> None:
 def test_oauth_callback_consent_denied() -> None:
     """Asserts that if the user clicks 'Cancel' on Google consent, we handle it."""
     client = _authed_client()
-    
-    response = client.get(
-        "/oauth/google/callback?error=access_denied&state=mock_state"
-    )
-    
+
+    response = client.get("/oauth/google/callback?error=access_denied&state=mock_state")
+
     assert response.status_code == 400
     assert "access_denied" in response.json()["detail"]
