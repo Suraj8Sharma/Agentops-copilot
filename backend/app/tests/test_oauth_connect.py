@@ -113,7 +113,9 @@ def test_oauth_connect_url_has_required_params() -> None:
 
     assert qs.get("response_type") == ["code"], "response_type must be 'code'"
     assert qs.get("access_type") == ["offline"], "access_type must be 'offline' (for refresh token)"
-    assert qs.get("prompt") == ["consent"], "prompt must be 'consent' (forces refresh token reissue)"
+    assert qs.get("prompt") == ["consent"], (
+        "prompt must be 'consent' (forces refresh token reissue)"
+    )
     assert "state" in qs and qs["state"][0], "state must be a non-empty signed token"
     assert "client_id" in qs, "client_id must be present"
     assert "redirect_uri" in qs, "redirect_uri must be present"
