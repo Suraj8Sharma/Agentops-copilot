@@ -28,9 +28,9 @@ void main() {
       theme: AppTheme.light,
       home: const TrustDashboardScreen(
         metrics: TrustDashboardMetrics(
-          latency: const [],
-          cost: const [],
-          accuracy: const [],
+          latency: [],
+          cost: [],
+          accuracy: [],
         ),
       ),
     ));
