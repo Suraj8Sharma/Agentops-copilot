@@ -1,4 +1,4 @@
-﻿"""Protected /me router — returns the authenticated user s own profile.
+"""Protected /me router — returns the authenticated user s own profile.
 
 This is the first protected route in the API and the canonical smoke-test
 for the JWT middleware:  a valid token returns 200 + profile data;

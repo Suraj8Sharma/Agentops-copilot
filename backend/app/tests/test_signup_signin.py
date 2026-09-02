@@ -114,9 +114,7 @@ def test_signup_valid_credentials_creates_account(
     )
 
 
-def test_signup_duplicate_email_rejected(
-    client: TestClient, mock_supabase: MagicMock
-) -> None:
+def test_signup_duplicate_email_rejected(client: TestClient, mock_supabase: MagicMock) -> None:
     """Re-signing up with an existing email -> 400, not 500."""
     # Supabase returns a user with identities=[] for duplicate email
     # (when "Confirm email" is enabled in project settings).
@@ -133,13 +131,9 @@ def test_signup_duplicate_email_rejected(
     assert "already exists" in response.json()["detail"].lower()
 
 
-def test_signup_weak_password_rejected(
-    client: TestClient, mock_supabase: MagicMock
-) -> None:
+def test_signup_weak_password_rejected(client: TestClient, mock_supabase: MagicMock) -> None:
     """Password below Supabase's minimum policy -> 400, not 500."""
-    mock_supabase.auth.sign_up.side_effect = Exception(
-        "Password should be at least 6 characters."
-    )
+    mock_supabase.auth.sign_up.side_effect = Exception("Password should be at least 6 characters.")
 
     response = client.post(
         "/auth/signup",
@@ -155,9 +149,7 @@ def test_signup_weak_password_rejected(
 # ---------------------------------------------------------------------------
 
 
-def test_login_correct_credentials_succeeds(
-    client: TestClient, mock_supabase: MagicMock
-) -> None:
+def test_login_correct_credentials_succeeds(client: TestClient, mock_supabase: MagicMock) -> None:
     """Valid credentials -> 200 with both access_token and refresh_token."""
     session = _make_session()
     mock_supabase.auth.sign_in_with_password.return_value = _make_auth_response(
@@ -177,13 +169,9 @@ def test_login_correct_credentials_succeeds(
     assert body["refresh_token"] == "mock-refresh-token"
 
 
-def test_login_incorrect_password_rejected(
-    client: TestClient, mock_supabase: MagicMock
-) -> None:
+def test_login_incorrect_password_rejected(client: TestClient, mock_supabase: MagicMock) -> None:
     """Wrong password -> 401, no token issued."""
-    mock_supabase.auth.sign_in_with_password.side_effect = Exception(
-        "Invalid login credentials"
-    )
+    mock_supabase.auth.sign_in_with_password.side_effect = Exception("Invalid login credentials")
 
     response = client.post(
         "/auth/login",

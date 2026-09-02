@@ -49,16 +49,16 @@ def mock_supabase_table():
     with patch("app.api.routers.oauth.create_client") as mock_create_client:
         mock_client_instance = MagicMock()
         mock_create_client.return_value = mock_client_instance
-        
+
         mock_table_method = MagicMock()
         mock_client_instance.table = mock_table_method
-        
+
         mock_table_instance = MagicMock()
         mock_table_method.return_value = mock_table_instance
-        
+
         mock_upsert = MagicMock()
         mock_table_instance.upsert.return_value = mock_upsert
-        
+
         yield mock_table_method
 
 
