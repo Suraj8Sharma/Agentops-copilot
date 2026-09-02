@@ -1,4 +1,4 @@
-﻿"""Stub /tasks router — protected, returns placeholder task list.
+"""Stub /tasks router — protected, returns placeholder task list.
 
 A real implementation arrives in a later day once the agent pipeline is
 wired up.  Today this stub exists solely so that:

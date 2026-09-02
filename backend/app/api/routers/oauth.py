@@ -1,8 +1,8 @@
-"""OAuth consent-flow router — D7.
+"""OAuth router — D7 / D8 / D9.
 
-Endpoint
---------
-GET /oauth/{provider}/connect
+Endpoints
+---------
+GET /oauth/{provider}/connect            (D7)
 
     Starts the OAuth consent flow for the signed-in user by building a
     Google authorization URL and returning it as JSON.  The Flutter client
@@ -14,11 +14,26 @@ GET /oauth/{provider}/connect
                 for CSRF protection.  The callback (D8) will verify this.
     - Returns:  ``{"authorization_url": "https://accounts.google.com/..."}``
 
+GET /oauth/{provider}/callback           (D8)
+
+    Receives the authorization code from Google, verifies the CSRF state,
+    exchanges the code for tokens, and stores them encrypted in the database.
+
+POST /oauth/internal/sweep-tokens        (D9)
+
+    Internal cron endpoint — NOT user-facing.  Scans ``oauth_connections``
+    for Google tokens approaching the 7-day Testing-mode hard expiry and
+    flags them as ``expired_testing_mode`` so the app can warn the user to
+    reconnect before things silently break.
+
+    - Auth:     ``Authorization: Bearer <CRON_SECRET>`` header (static secret).
+    - Returns:  ``{flagged: int, scanned: int}``
+
 Out of scope here
 -----------------
-- Code exchange / token storage        → D8 (callback endpoint)
 - GitHub / Slack providers             → D10
-- Token revocation                     → later
+- Token revocation endpoint            → later
+- Sending push notifications           → D24
 
 Security notes
 --------------
@@ -26,6 +41,8 @@ Security notes
 - The full authorization URL is never logged (it contains ``client_id``
   and the signed ``state``).
 - ``GOOGLE_OAUTH_CLIENT_ID`` being empty at request time → 500, loud.
+- The sweep endpoint checks ``CRON_SECRET``; an empty secret means the
+  guard is effectively disabled — always set this in production/staging.
 """
 
 import hashlib
@@ -38,7 +55,7 @@ from urllib.parse import urlencode
 
 import httpx
 from cryptography.fernet import Fernet
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from supabase import create_client
 
 from app.core.config import settings
@@ -362,3 +379,159 @@ def oauth_callback(
         )
 
     return {"message": "OAuth connection successful"}
+
+
+# ---------------------------------------------------------------------------
+# D9 — Internal sweep endpoint (cron / scheduler use only)
+# ---------------------------------------------------------------------------
+
+# How long before the 7-day hard limit we proactively flag the connection.
+# 6 days 12 hours = 6.5 days, giving the user a ~12-hour window to reconnect.
+_TESTING_MODE_EXPIRY_DAYS = 7
+_SWEEP_FLAG_THRESHOLD = timedelta(days=6, hours=12)
+
+# Providers that are subject to Google's 7-day Testing-mode limit.
+_GOOGLE_PROVIDERS = frozenset({"google_calendar", "gmail"})
+
+
+class SweepResult(dict):
+    """Intentionally a plain dict sub-class so FastAPI serialises it as JSON."""
+
+
+@router.post(
+    "/internal/sweep-tokens",
+    summary="[Internal] Sweep Google OAuth tokens for 7-day Testing-mode expiry",
+    description=(
+        "**Not user-facing.** Scans all active Google OAuth connections and flags "
+        "any that have been connected for more than 6 days 12 hours as "
+        "``expired_testing_mode``. This gives users a heads-up to reconnect "
+        "before Google's 7-day Testing-mode hard expiry silently breaks things.\n\n"
+        "Secured by a static ``Authorization: Bearer <CRON_SECRET>`` header. "
+        "Call this from an external cron scheduler (e.g. cron-job.org) once or "
+        "twice a day."
+    ),
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,  # Hide from public Swagger UI
+)
+def sweep_tokens(
+    authorization: Annotated[str, Header()] = "",
+) -> dict:
+    """Sweep Google OAuth connections for imminent 7-day Testing-mode expiry.
+
+    Meant to be called by an external cron scheduler, not by users.
+
+    Args:
+        authorization: The raw ``Authorization`` header value (injected by
+                       FastAPI from the request headers).
+
+    Returns:
+        ``{"scanned": int, "flagged": int}`` — number of connections examined
+        and number newly flagged as ``expired_testing_mode``.
+
+    Raises:
+        HTTPException(401): Missing or incorrect ``CRON_SECRET``.
+        HTTPException(503): Database query failed.
+    """
+    # ------------------------------------------------------------------
+    # 1. Auth guard — reject anyone without the correct CRON_SECRET
+    # ------------------------------------------------------------------
+    expected = settings.CRON_SECRET
+    if not expected:
+        # If CRON_SECRET is not configured, the endpoint is effectively open.
+        # Log loudly so it's visible in monitoring, but don't block in dev.
+        logger.warning(
+            "sweep-tokens called but CRON_SECRET is not configured — "
+            "endpoint is unprotected. Set CRON_SECRET in production."
+        )
+    else:
+        # Expect: "Bearer <token>"
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not hmac.compare_digest(token, expected):
+            logger.warning("sweep-tokens rejected: bad or missing CRON_SECRET")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or missing Authorization token.",
+            )
+
+    # ------------------------------------------------------------------
+    # 2. Query all active Google connections (service-role to bypass RLS)
+    # ------------------------------------------------------------------
+    try:
+        service_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+        result = (
+            service_client.table("oauth_connections")
+            .select("id, user_id, provider, connected_at, status")
+            .in_("provider", list(_GOOGLE_PROVIDERS))
+            .eq("status", "active")
+            .execute()
+        )
+        rows = result.data or []
+    except Exception as exc:
+        logger.error("sweep-tokens: failed to query oauth_connections: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to query database. Will retry on next scheduled run.",
+        )
+
+    # ------------------------------------------------------------------
+    # 3. Flag any connections older than the threshold
+    # ------------------------------------------------------------------
+    now = datetime.now(timezone.utc)
+    scanned = len(rows)
+    flagged = 0
+    flagged_ids: list[str] = []
+
+    for row in rows:
+        connected_at_raw = row.get("connected_at")
+        if not connected_at_raw:
+            continue
+
+        # Parse ISO timestamp from Supabase (may or may not include timezone)
+        try:
+            connected_at = datetime.fromisoformat(connected_at_raw)
+            # Ensure it's timezone-aware
+            if connected_at.tzinfo is None:
+                connected_at = connected_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            logger.warning(
+                "sweep-tokens: unparseable connected_at=%r for row id=%s — skipping",
+                connected_at_raw,
+                row.get("id"),
+            )
+            continue
+
+        token_age = now - connected_at
+        if token_age >= _SWEEP_FLAG_THRESHOLD:
+            flagged_ids.append(row["id"])
+            flagged += 1
+            logger.info(
+                "sweep-tokens: flagging connection id=%s user_id=%s provider=%s "
+                "(age=%s, threshold=%s)",
+                row["id"],
+                row["user_id"],
+                row["provider"],
+                token_age,
+                _SWEEP_FLAG_THRESHOLD,
+            )
+
+    # ------------------------------------------------------------------
+    # 4. Bulk-update flagged rows to expired_testing_mode
+    # ------------------------------------------------------------------
+    if flagged_ids:
+        try:
+            service_client.table("oauth_connections").update(
+                {"status": "expired_testing_mode"}
+            ).in_("id", flagged_ids).execute()
+        except Exception as exc:
+            logger.error(
+                "sweep-tokens: failed to update %d rows to expired_testing_mode: %s",
+                len(flagged_ids),
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to update database. Will retry on next scheduled run.",
+            )
+
+    logger.info("sweep-tokens complete: scanned=%d flagged=%d", scanned, flagged)
+    return {"scanned": scanned, "flagged": flagged}

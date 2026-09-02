@@ -1,4 +1,4 @@
-﻿"""Health-check router.
+"""Health-check router.
 
 Exposes ``GET /health`` — a public, unauthenticated liveness probe used by
 Render, CI pipelines, and load balancers to confirm the server is running.
@@ -21,8 +21,7 @@ class HealthResponse(BaseModel):
     response_model=HealthResponse,
     summary="Liveness check",
     description=(
-        "Returns ``{\"status\": \"ok\"}`` when the server is running. "
-        "No authentication required."
+        'Returns ``{"status": "ok"}`` when the server is running. No authentication required.'
     ),
 )
 def health_check() -> HealthResponse:

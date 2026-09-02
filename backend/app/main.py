@@ -57,10 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: ARG001
 # ---------------------------------------------------------------------------
 app = FastAPI(
     title="AgentOps Copilot API",
-    description=(
-        "Backend for AgentOps Copilot — "
-        "AI-powered mobile DevOps companion."
-    ),
+    description=("Backend for AgentOps Copilot — AI-powered mobile DevOps companion."),
     version="0.1.0",
     lifespan=lifespan,
     # Disable docs in production via env var in a future day.

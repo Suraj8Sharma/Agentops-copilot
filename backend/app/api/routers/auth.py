@@ -17,7 +17,7 @@ POST /auth/signup
 POST /auth/login
     Authenticate with email + password.
     Returns 200 with ``{access_token, refresh_token}`` on success.
-    Returns 401 on invalid credentials.-unauthorized 
+    Returns 401 on invalid credentials.-unauthorized
 """
 
 import logging
@@ -125,9 +125,7 @@ def signup(payload: AuthRequest) -> Any:
     logger.info("Signup attempt for email: %s", payload.email)
 
     try:
-        response = supabase.auth.sign_up(
-            {"email": payload.email, "password": payload.password}
-        )
+        response = supabase.auth.sign_up({"email": payload.email, "password": payload.password})
     except Exception as exc:
         error_msg = _extract_supabase_error(exc)
         logger.warning("Signup failed for %s -- %s", payload.email, error_msg)
