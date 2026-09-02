@@ -23,7 +23,7 @@ class TrustDashboardMetrics {
   final List<DashboardMetricPoint> accuracy;
 }
 
-const mockTrustDashboardMetrics = TrustDashboardMetrics(
+const TrustDashboardMetrics mockTrustDashboardMetrics = TrustDashboardMetrics(
   latency: [
     DashboardMetricPoint(label: 'Mon', value: 1.8),
     DashboardMetricPoint(label: 'Tue', value: 2.4),
@@ -54,7 +54,10 @@ const mockTrustDashboardMetrics = TrustDashboardMetrics(
 );
 
 class TrustDashboardScreen extends StatelessWidget {
-  const TrustDashboardScreen({super.key, this.metrics = mockTrustDashboardMetrics});
+  const TrustDashboardScreen({
+    super.key,
+    this.metrics = mockTrustDashboardMetrics,
+  });
 
   final TrustDashboardMetrics metrics;
 
@@ -91,7 +94,8 @@ class TrustDashboardScreen extends StatelessWidget {
               key: const Key('cost-metric-card'),
               title: 'Cost',
               subtitle: 'LLM spend',
-              value: '\$${metrics.cost.fold<double>(0, (sum, point) => sum + point.value).toStringAsFixed(2)}',
+              value:
+                  '\$${metrics.cost.fold<double>(0, (sum, point) => sum + point.value).toStringAsFixed(2)}',
               detail: 'Groq and Gemini usage',
               color: AppColors.secondary,
               points: metrics.cost,
@@ -123,13 +127,17 @@ class TrustDashboardScreen extends StatelessWidget {
 
   static double _average(List<DashboardMetricPoint> points) {
     if (points.isEmpty) return 0;
-    return points.fold<double>(0, (sum, point) => sum + point.value) / points.length;
+    return points.fold<double>(0, (sum, point) => sum + point.value) /
+        points.length;
   }
 
   static double _p95(List<DashboardMetricPoint> points) {
     if (points.isEmpty) return 0;
     final values = points.map((point) => point.value).toList()..sort();
-    final index = math.min(values.length - 1, (values.length * 0.95).ceil() - 1);
+    final index = math.min(
+      values.length - 1,
+      (values.length * 0.95).ceil() - 1,
+    );
     return values[index];
   }
 }
@@ -165,11 +173,19 @@ class _MetricCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, key: Key('$title-metric-title'), style: textTheme.titleMedium),
+            Text(
+              title,
+              key: Key('$title-metric-title'),
+              style: textTheme.titleMedium,
+            ),
             const SizedBox(height: AppSpacing.xs),
             Text(subtitle, style: textTheme.bodySmall),
             const SizedBox(height: AppSpacing.sm),
-            Text(value, key: Key('$title-metric-value'), style: textTheme.headlineMedium),
+            Text(
+              value,
+              key: Key('$title-metric-value'),
+              style: textTheme.headlineMedium,
+            ),
             const SizedBox(height: AppSpacing.xs),
             Text(detail, style: textTheme.bodySmall),
             const SizedBox(height: AppSpacing.md),
@@ -178,13 +194,19 @@ class _MetricCard extends StatelessWidget {
               height: AppSpacing.xxl,
               width: double.infinity,
               child: CustomPaint(
-                painter: _MetricChartPainter(points: points, color: color, type: chartType),
+                painter: _MetricChartPainter(
+                  points: points,
+                  color: color,
+                  type: chartType,
+                ),
               ),
             ),
             const SizedBox(height: AppSpacing.xs),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: points.map((point) => Text(point.label, style: textTheme.bodySmall)).toList(),
+              children: points
+                  .map((point) => Text(point.label, style: textTheme.bodySmall))
+                  .toList(),
             ),
           ],
         ),
@@ -230,7 +252,11 @@ class _Legend extends StatelessWidget {
 }
 
 class _MetricChartPainter extends CustomPainter {
-  _MetricChartPainter({required this.points, required this.color, required this.type});
+  _MetricChartPainter({
+    required this.points,
+    required this.color,
+    required this.type,
+  });
 
   final List<DashboardMetricPoint> points;
   final Color color;
@@ -239,7 +265,9 @@ class _MetricChartPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (points.isEmpty) return;
-    final maxValue = points.map((point) => point.value).reduce(math.max);
+    final maxValue = points
+        .map((point) => point.value)
+        .reduce((first, second) => first > second ? first : second);
     final range = maxValue == 0 ? 1 : maxValue;
     final paint = Paint()..color = color;
     if (type == _ChartType.bar) {
@@ -248,8 +276,12 @@ class _MetricChartPainter extends CustomPainter {
         final height = size.height * points[index].value / range;
         canvas.drawRRect(
           RRect.fromRectAndRadius(
-            Rect.fromLTWH(index * size.width / points.length + barWidth / 2,
-                size.height - height, barWidth, height),
+            Rect.fromLTWH(
+              index * size.width / points.length + barWidth / 2,
+              size.height - height,
+              barWidth,
+              height,
+            ),
             const Radius.circular(AppSpacing.xs),
           ),
           paint,
@@ -259,15 +291,28 @@ class _MetricChartPainter extends CustomPainter {
     }
     final path = Path();
     for (var index = 0; index < points.length; index++) {
-      final x = points.length == 1 ? size.width / 2 : index * size.width / (points.length - 1);
+      final x = points.length == 1
+          ? size.width / 2
+          : index * size.width / (points.length - 1);
       final y = size.height - size.height * points[index].value / range;
-      if (index == 0) path.moveTo(x, y); else path.lineTo(x, y);
+      if (index == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
       canvas.drawCircle(Offset(x, y), AppSpacing.xs, paint);
     }
-    canvas.drawPath(path, paint..style = PaintingStyle.stroke..strokeWidth = AppSpacing.xs);
+    canvas.drawPath(
+      path,
+      paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = AppSpacing.xs,
+    );
   }
 
   @override
   bool shouldRepaint(covariant _MetricChartPainter oldDelegate) =>
-      oldDelegate.points != points || oldDelegate.color != color || oldDelegate.type != type;
+      oldDelegate.points != points ||
+      oldDelegate.color != color ||
+      oldDelegate.type != type;
 }
