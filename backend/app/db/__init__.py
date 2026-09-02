@@ -1,1 +1,1 @@
-﻿"""db package — database client singletons."""
+"""db package — database client singletons."""

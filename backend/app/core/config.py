@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str = ""
 
     # -------------------------------------------------------------------------
+    # Cron / Internal jobs — required from D9
+    # -------------------------------------------------------------------------
+    # Secret used to authenticate calls to internal cron endpoints (e.g. sweep-tokens).
+    # Set to any long random string; pass it as the Authorization header from your scheduler.
+    CRON_SECRET: str = ""
+
+    # -------------------------------------------------------------------------
     # Firebase / Render — required from D24 / D34 (placeholders today)
     # -------------------------------------------------------------------------
     FCM_SERVER_KEY: str = ""

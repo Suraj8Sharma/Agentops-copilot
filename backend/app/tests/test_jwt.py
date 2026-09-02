@@ -26,6 +26,7 @@ client = TestClient(app)
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mock_supabase_get_user() -> Any:
     """Mock the supabase.auth.get_user method used in the dependency."""
@@ -43,6 +44,7 @@ def mock_supabase_refresh() -> Any:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_jwt_valid_token_accepted(mock_supabase_get_user: MagicMock) -> None:
     """A valid token should grant access to a protected route."""
@@ -71,9 +73,9 @@ def test_jwt_missing_token_rejected() -> None:
 def test_jwt_tampered_signature_rejected(mock_supabase_get_user: MagicMock) -> None:
     """A token that fails signature validation should be rejected."""
     mock_supabase_get_user.side_effect = Exception("JWT signature is invalid")
-    
+
     response = client.get("/me", headers={"Authorization": "Bearer bad.jwt.token"})
-    
+
     assert response.status_code == 401
     assert response.json()["detail"] == "invalid_token"
 
@@ -81,9 +83,9 @@ def test_jwt_tampered_signature_rejected(mock_supabase_get_user: MagicMock) -> N
 def test_jwt_expired_token_rejected(mock_supabase_get_user: MagicMock) -> None:
     """An expired token should be rejected with a specific 'token_expired' detail."""
     mock_supabase_get_user.side_effect = Exception("JWT expired")
-    
+
     response = client.get("/me", headers={"Authorization": "Bearer expired.jwt.token"})
-    
+
     assert response.status_code == 401
     assert response.json()["detail"] == "token_expired"
     assert response.headers["X-Token-Expired"] == "true"

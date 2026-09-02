@@ -23,8 +23,10 @@ def client(_mock_supabase_env: None) -> TestClient:  # noqa: ARG001
     # Stub out the Supabase create_client so we do not hit the network.
     import unittest.mock as mock
 
-    with mock.patch("app.db.supabase_client.create_client") as mock_create, \
-         mock.patch("app.db.supabase_client.probe_connection") as mock_probe:
+    with (
+        mock.patch("app.db.supabase_client.create_client") as mock_create,
+        mock.patch("app.db.supabase_client.probe_connection") as mock_probe,
+    ):
         mock_create.return_value = mock.MagicMock()
         mock_probe.return_value = None
 

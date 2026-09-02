@@ -82,7 +82,7 @@ def get_current_user(
             detail="not_authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-        
+
     token = credentials.credentials
 
     try:
@@ -110,9 +110,7 @@ def get_current_user(
     except Exception as exc:
         error_msg = str(exc).lower()
         # No token value in logs — only the error class name.
-        logger.warning(
-            "Token verification failed [%s]", type(exc).__name__
-        )
+        logger.warning("Token verification failed [%s]", type(exc).__name__)
 
         if "expired" in error_msg:
             raise HTTPException(

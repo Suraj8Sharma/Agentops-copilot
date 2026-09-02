@@ -64,7 +64,7 @@ def _clear_overrides():
 @pytest.fixture(autouse=True)
 def _mock_settings():
     """Ensure required OAuth config is set for all tests in this file.
-    
+
     In CI environments, .env is not present, so GOOGLE_OAUTH_CLIENT_ID
     and GOOGLE_OAUTH_REDIRECT_URI would default to "" and trigger 500 errors.
     """
@@ -73,7 +73,6 @@ def _mock_settings():
         mock_settings.GOOGLE_OAUTH_REDIRECT_URI = "http://localhost:8000/oauth/google/callback"
         mock_settings.SUPABASE_JWT_SECRET = "test-jwt-secret-for-hmac-signing"
         yield mock_settings
-
 
 
 # ---------------------------------------------------------------------------
@@ -211,4 +210,3 @@ def test_oauth_connect_missing_redirect_uri_returns_500(_mock_settings) -> None:
 
     assert response.status_code == 500
     assert "not configured" in response.json()["detail"].lower()
-
