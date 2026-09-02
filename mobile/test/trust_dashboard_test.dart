@@ -9,7 +9,7 @@ void main() {
   testWidgets('renders latency, cost, and accuracy mock charts', (tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.light,
-      home: TrustDashboardScreen(),
+      home: const TrustDashboardScreen(),
     ));
 
     expect(find.byKey(const Key('trust-dashboard-screen')), findsOneWidget);
@@ -26,8 +26,12 @@ void main() {
   testWidgets('empty metric series renders safely', (tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.light,
-      home: TrustDashboardScreen(
-        metrics: TrustDashboardMetrics(latency: [], cost: [], accuracy: []),
+      home: const TrustDashboardScreen(
+        metrics: TrustDashboardMetrics(
+          latency: const [],
+          cost: const [],
+          accuracy: const [],
+        ),
       ),
     ));
 
