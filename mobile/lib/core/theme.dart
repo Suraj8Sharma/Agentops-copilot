@@ -74,6 +74,8 @@ class AppSpacing {
   static const double screenPadding = md; // default page margin
   static const double cardRadius = 12.0;
   static const double buttonRadius = 10.0;
+  static const double iconSize = md;
+  static const double progressStrokeWidth = 2.0;
 }
 
 /// -----------------------------------------------------------------------
