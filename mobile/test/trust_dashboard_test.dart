@@ -7,7 +7,7 @@ import 'package:agentops_copilot/features/trust_dashboard/trust_dashboard_screen
 
 void main() {
   testWidgets('renders latency, cost, and accuracy mock charts', (tester) async {
-    await tester.pumpWidget(const MaterialApp(
+    await tester.pumpWidget(MaterialApp(
       theme: AppTheme.light,
       home: TrustDashboardScreen(),
     ));
@@ -24,7 +24,7 @@ void main() {
   });
 
   testWidgets('empty metric series renders safely', (tester) async {
-    await tester.pumpWidget(const MaterialApp(
+    await tester.pumpWidget(MaterialApp(
       theme: AppTheme.light,
       home: TrustDashboardScreen(
         metrics: TrustDashboardMetrics(latency: [], cost: [], accuracy: []),
