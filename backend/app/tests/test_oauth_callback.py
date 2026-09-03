@@ -14,7 +14,6 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
-from app.core.config import settings
 from app.core.security import CurrentUser, get_current_user
 from app.main import app
 
@@ -23,6 +22,8 @@ from app.main import app
 # ---------------------------------------------------------------------------
 
 _FAKE_USER = CurrentUser(id="test-user-uuid-1234", email="test@example.com")
+
+_FAKE_ENCRYPTION_KEY = Fernet.generate_key().decode()
 
 
 def _authed_client() -> TestClient:
@@ -37,11 +38,23 @@ def _clear_overrides():
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
-def mock_encryption_key(monkeypatch):
-    key = Fernet.generate_key().decode()
-    monkeypatch.setattr(settings, "ENCRYPTION_KEY", key)
-    return key
+@pytest.fixture(autouse=True)
+def mock_settings():
+    """Patch the settings object used inside the router so credentials and
+    encryption key are always present, regardless of the local .env file."""
+    with patch("app.api.routers.oauth.settings") as m:
+        m.ENCRYPTION_KEY = _FAKE_ENCRYPTION_KEY
+        m.SUPABASE_JWT_SECRET = "test-jwt-secret"
+        m.SUPABASE_URL = "https://fake.supabase.co"
+        m.SUPABASE_SERVICE_ROLE_KEY = "fake-service-key"
+        m.GOOGLE_OAUTH_CLIENT_ID = "fake-google-client-id"
+        m.GOOGLE_OAUTH_CLIENT_SECRET = "fake-google-client-secret"
+        m.GOOGLE_OAUTH_REDIRECT_URI = "http://localhost:8000/oauth/google/callback"
+        m.GITHUB_OAUTH_CLIENT_ID = "fake-github-client-id"
+        m.GITHUB_OAUTH_CLIENT_SECRET = "fake-github-client-secret"
+        m.SLACK_CLIENT_ID = "fake-slack-client-id"
+        m.SLACK_CLIENT_SECRET = "fake-slack-client-secret"
+        yield m
 
 
 @pytest.fixture
@@ -72,6 +85,7 @@ def mock_verify_state():
 def mock_httpx_post():
     with patch("httpx.Client.post") as mock_post:
         mock_response = MagicMock()
+        mock_response.status_code = 200  # required: new code inspects status_code for Google
         mock_response.json.return_value = {
             "access_token": "mock_google_access_token",
             "refresh_token": "mock_google_refresh_token",
@@ -89,7 +103,7 @@ def mock_httpx_post():
 
 
 def test_oauth_callback_exchanges_code_for_token(
-    mock_encryption_key, mock_supabase_table, mock_verify_state, mock_httpx_post
+    mock_supabase_table, mock_verify_state, mock_httpx_post
 ) -> None:
     """Asserts the backend successfully trades the code for tokens and upserts them."""
 
@@ -100,7 +114,7 @@ def test_oauth_callback_exchanges_code_for_token(
     assert response.status_code == 200
     assert response.json() == {"message": "OAuth connection successful"}
 
-    # Verify the code exchange call
+    # Verify the code exchange call used the Google token URL from PROVIDER_CONFIG
     mock_httpx_post.assert_called_once()
     args, kwargs = mock_httpx_post.call_args
     assert args[0] == "https://oauth2.googleapis.com/token"
@@ -126,7 +140,7 @@ def test_oauth_callback_exchanges_code_for_token(
 
 
 def test_oauth_token_encrypted_at_rest(
-    mock_encryption_key, mock_supabase_table, mock_verify_state, mock_httpx_post
+    mock_supabase_table, mock_verify_state, mock_httpx_post
 ) -> None:
     """Asserts that the tokens sent to the database are encrypted and decryptable."""
 
@@ -148,7 +162,7 @@ def test_oauth_token_encrypted_at_rest(
     assert encrypted_refresh != "mock_google_refresh_token"
 
     # 2. Ensure we can decrypt it back to the original using the backend key
-    fernet = Fernet(mock_encryption_key.encode())
+    fernet = Fernet(_FAKE_ENCRYPTION_KEY.encode())
 
     decrypted_access = fernet.decrypt(encrypted_access.encode()).decode()
     decrypted_refresh = fernet.decrypt(encrypted_refresh.encode()).decode()

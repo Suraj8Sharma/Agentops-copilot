@@ -170,17 +170,28 @@ def test_oauth_connect_state_is_unique_per_request() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_oauth_connect_unknown_provider_returns_404() -> None:
-    """Unknown providers must return 404 — GitHub/Slack arrive in D10."""
+def test_oauth_connect_github_returns_200() -> None:
+    """GitHub is now a supported provider — /connect must return 200 with an auth URL."""
     client = _authed_client()
     response = client.get("/oauth/github/connect")
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert "authorization_url" in response.json()
+    assert "github.com" in response.json()["authorization_url"]
 
 
-def test_oauth_connect_slack_returns_404() -> None:
-    """Slack is also not yet supported — must return 404."""
+def test_oauth_connect_slack_returns_200() -> None:
+    """Slack is now a supported provider — /connect must return 200 with an auth URL."""
     client = _authed_client()
     response = client.get("/oauth/slack/connect")
+    assert response.status_code == 200
+    assert "authorization_url" in response.json()
+    assert "slack.com" in response.json()["authorization_url"]
+
+
+def test_oauth_connect_unknown_provider_returns_404() -> None:
+    """Completely unknown provider strings must still return 404."""
+    client = _authed_client()
+    response = client.get("/oauth/notion/connect")
     assert response.status_code == 404
 
 
@@ -202,11 +213,11 @@ def test_oauth_connect_missing_client_id_returns_500(_mock_settings) -> None:
     assert "not configured" in response.json()["detail"].lower()
 
 
-def test_oauth_connect_missing_redirect_uri_returns_500(_mock_settings) -> None:
-    """Missing GOOGLE_OAUTH_REDIRECT_URI must produce a loud 500."""
-    _mock_settings.GOOGLE_OAUTH_REDIRECT_URI = ""
+def test_oauth_connect_github_missing_credentials_returns_500(_mock_settings) -> None:
+    """Missing GITHUB_OAUTH_CLIENT_ID must produce a loud 500."""
+    _mock_settings.GITHUB_OAUTH_CLIENT_ID = ""
     client = _authed_client()
-    response = client.get("/oauth/google/connect")
+    response = client.get("/oauth/github/connect")
 
     assert response.status_code == 500
     assert "not configured" in response.json()["detail"].lower()
