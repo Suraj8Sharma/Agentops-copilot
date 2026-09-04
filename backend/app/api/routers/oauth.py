@@ -290,7 +290,7 @@ def oauth_connect(
     # Google-specific extras — not part of the base OAuth 2.0 spec
     if provider == "google":
         params["access_type"] = "offline"  # required to receive a refresh token
-        params["prompt"] = "consent"        # re-issues refresh token on repeat consent
+        params["prompt"] = "consent"  # re-issues refresh token on repeat consent
 
     authorization_url = f"{cfg['authorize_url']}?{urlencode(params)}"
 
@@ -616,7 +616,6 @@ def oauth_callback(
         provider,
     )
     return {"message": "OAuth connection successful"}
-
 
 
 # ---------------------------------------------------------------------------
