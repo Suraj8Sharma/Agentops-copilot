@@ -1,4 +1,4 @@
-﻿-- Migration: 20260828000006_draft_rls_policies
+-- Migration: 20260828000006_draft_rls_policies
 -- Idempotent: yes  Destructive: no
 
 -- Profiles
