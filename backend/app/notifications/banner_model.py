@@ -156,9 +156,9 @@ BANNER_MAX_CHARS = 80
 # These are NOT LLM-generated; they are a last-resort safety net.
 BANNER_DEFAULTS: dict[str, str] = {
     "approval_needed": "Your agent needs your approval.",
-    "task_completed":  "Your task completed.",
-    "digest_ready":    "Your digest is ready.",
-    "oauth_expiring":  "A connected account needs your attention.",
+    "task_completed": "Your task completed.",
+    "digest_ready": "Your digest is ready.",
+    "oauth_expiring": "A connected account needs your attention.",
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -222,6 +222,7 @@ Output only the banner line. Nothing else — no explanation, no prefix, no quot
 # Implementation (D17) will call this to build the per-request message.
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def build_banner_user_prompt(event: dict) -> str:
     """
     Construct the user-turn message for a banner generation call.
@@ -282,6 +283,7 @@ def build_banner_user_prompt(event: dict) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 # D11 STUB: generate_banner() — implementation is D17
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def generate_banner(event: dict) -> str | None:
     """

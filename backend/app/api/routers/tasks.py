@@ -1,4 +1,4 @@
-﻿"""Tasks router — D11.
+"""Tasks router — D11.
 
 Endpoints
 ---------
@@ -69,9 +69,7 @@ class TaskCreate(BaseModel):
         if self.input_type == "text" and not self.raw_input:
             raise ValueError("raw_input is required when input_type is ''text''")
         if self.input_type == "voice" and not self.transcription_text:
-            raise ValueError(
-                "transcription_text is required when input_type is ''voice''"
-            )
+            raise ValueError("transcription_text is required when input_type is ''voice''")
         return self
 
 
@@ -134,18 +132,14 @@ def create_task(
     try:
         result = supabase.table("tasks").insert(payload).execute()
     except Exception as exc:
-        logger.error(
-            "DB error creating task for user_id=%s: %s", current_user.id, exc
-        )
+        logger.error("DB error creating task for user_id=%s: %s", current_user.id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create task.",
         ) from exc
 
     if not result.data:
-        logger.error(
-            "Task insert returned no data for user_id=%s", current_user.id
-        )
+        logger.error("Task insert returned no data for user_id=%s", current_user.id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Task creation failed — no data returned.",
@@ -198,8 +192,7 @@ def list_tasks(
     if status is not None and status not in _VALID_STATUSES:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid status filter {status!r}. "
-            f"Valid values: {sorted(_VALID_STATUSES)}",
+            detail=f"Invalid status filter {status!r}. Valid values: {sorted(_VALID_STATUSES)}",
         )
 
     try:
@@ -215,9 +208,7 @@ def list_tasks(
 
         result = query.execute()
     except Exception as exc:
-        logger.error(
-            "DB error listing tasks for user_id=%s: %s", current_user.id, exc
-        )
+        logger.error("DB error listing tasks for user_id=%s: %s", current_user.id, exc)
         raise HTTPException(
             status_code=500,
             detail="Failed to retrieve tasks.",

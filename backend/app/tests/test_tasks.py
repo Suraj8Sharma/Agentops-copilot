@@ -147,8 +147,12 @@ def test_post_tasks_creates_voice_task(
     mock_table: tuple[MagicMock, MagicMock],
 ) -> None:
     """POST with input_type=voice and transcription_text should succeed."""
-    voice_task = {**_SAMPLE_TASK, "input_type": "voice", "raw_input": None,
-                  "transcription_text": "Schedule a meeting."}
+    voice_task = {
+        **_SAMPLE_TASK,
+        "input_type": "voice",
+        "raw_input": None,
+        "transcription_text": "Schedule a meeting.",
+    }
     _, chain = mock_table
     chain.execute.return_value = _make_db_result([voice_task])
 
@@ -384,8 +388,7 @@ def test_task_plans_rls_service_role_only_write() -> None:
         r"create\s+policy\s+\S+\s+on\s+public\.task_plans\s+for\s+insert"
     )
     assert not insert_policy_pattern.search(sql), (
-        "task_plans must NOT have a user-facing INSERT policy. "
-        "Writes are service-role only."
+        "task_plans must NOT have a user-facing INSERT policy. Writes are service-role only."
     )
 
     # Same for plan_steps.
@@ -393,6 +396,5 @@ def test_task_plans_rls_service_role_only_write() -> None:
         r"create\s+policy\s+\S+\s+on\s+public\.plan_steps\s+for\s+insert"
     )
     assert not insert_policy_pattern_steps.search(sql), (
-        "plan_steps must NOT have a user-facing INSERT policy. "
-        "Writes are service-role only."
+        "plan_steps must NOT have a user-facing INSERT policy. Writes are service-role only."
     )

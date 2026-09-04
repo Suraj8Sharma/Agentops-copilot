@@ -122,9 +122,7 @@ def _mock_token_response(body: dict, status_code: int = 200) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def test_github_callback_success_stores_one_row(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_github_callback_success_stores_one_row(mock_settings, mock_state, mock_db) -> None:
     """A valid GitHub exchange must store exactly one row with provider='github'."""
     token_resp = _mock_token_response(
         {"access_token": "ghs_fakeAccessToken", "token_type": "bearer", "scope": "repo"}
@@ -161,9 +159,7 @@ def test_github_callback_success_null_refresh_and_expiry(
     assert records[0]["expires_at"] is None
 
 
-def test_github_callback_comma_scope_parsed_correctly(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_github_callback_comma_scope_parsed_correctly(mock_settings, mock_state, mock_db) -> None:
     """GitHub echoes scopes as comma-separated; we must split on commas."""
     token_resp = _mock_token_response(
         {
@@ -181,9 +177,7 @@ def test_github_callback_comma_scope_parsed_correctly(
     assert records[0]["scopes"] == ["repo", "read:user"]
 
 
-def test_github_callback_access_token_encrypted_at_rest(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_github_callback_access_token_encrypted_at_rest(mock_settings, mock_state, mock_db) -> None:
     """The access_token written to the DB must be Fernet-encrypted."""
     raw_token = "ghs_realSecretToken"
     token_resp = _mock_token_response(
@@ -210,9 +204,7 @@ def test_github_callback_access_token_encrypted_at_rest(
 # ---------------------------------------------------------------------------
 
 
-def test_github_bad_code_returns_400_not_crash(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_github_bad_code_returns_400_not_crash(mock_settings, mock_state, mock_db) -> None:
     """GitHub returns HTTP 200 with an 'error' key on a bad/reused code.
     We must return 400 and NOT write to the DB.
     """
@@ -233,9 +225,7 @@ def test_github_bad_code_returns_400_not_crash(
     mock_db.upsert.assert_not_called()
 
 
-def test_github_bad_code_form_encoded_fallback(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_github_bad_code_form_encoded_fallback(mock_settings, mock_state, mock_db) -> None:
     """If GitHub somehow returns form-encoded instead of JSON, we still detect failure."""
     bad_resp = MagicMock()
     bad_resp.status_code = 200
@@ -257,9 +247,7 @@ def test_github_bad_code_form_encoded_fallback(
 # ---------------------------------------------------------------------------
 
 
-def test_slack_callback_success_stores_one_row(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_slack_callback_success_stores_one_row(mock_settings, mock_state, mock_db) -> None:
     """A valid Slack exchange must store exactly one row with provider='slack'."""
     token_resp = _mock_token_response(
         {
@@ -284,9 +272,7 @@ def test_slack_callback_success_stores_one_row(
     assert records[0]["status"] == "active"
 
 
-def test_slack_callback_success_null_refresh_and_expiry(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_slack_callback_success_null_refresh_and_expiry(mock_settings, mock_state, mock_db) -> None:
     """Slack rows must have refresh_token=None and expires_at=None."""
     token_resp = _mock_token_response(
         {
@@ -305,9 +291,7 @@ def test_slack_callback_success_null_refresh_and_expiry(
     assert records[0]["expires_at"] is None
 
 
-def test_slack_callback_comma_scope_parsed_correctly(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_slack_callback_comma_scope_parsed_correctly(mock_settings, mock_state, mock_db) -> None:
     """Slack returns scopes as comma-separated; we must split on commas."""
     token_resp = _mock_token_response(
         {
@@ -325,9 +309,7 @@ def test_slack_callback_comma_scope_parsed_correctly(
     assert records[0]["scopes"] == ["chat:write", "channels:read", "users:read"]
 
 
-def test_slack_callback_access_token_encrypted_at_rest(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_slack_callback_access_token_encrypted_at_rest(mock_settings, mock_state, mock_db) -> None:
     """The access_token written to the DB must be Fernet-encrypted."""
     raw_token = "xoxb-real-secret-bot-token"
     token_resp = _mock_token_response(
@@ -352,9 +334,7 @@ def test_slack_callback_access_token_encrypted_at_rest(
 # ---------------------------------------------------------------------------
 
 
-def test_slack_bad_code_returns_400_not_crash(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_slack_bad_code_returns_400_not_crash(mock_settings, mock_state, mock_db) -> None:
     """Slack returns HTTP 200 with ok=false on a bad/reused code.
     We must return 400 and NOT write to the DB.
     """
@@ -372,9 +352,7 @@ def test_slack_bad_code_returns_400_not_crash(
     mock_db.upsert.assert_not_called()
 
 
-def test_slack_ok_false_without_error_field_returns_400(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_slack_ok_false_without_error_field_returns_400(mock_settings, mock_state, mock_db) -> None:
     """ok=false with no 'error' field must still be treated as a failure."""
     token_resp = _mock_token_response({"ok": False})
 
@@ -391,9 +369,7 @@ def test_slack_ok_false_without_error_field_returns_400(
 # ---------------------------------------------------------------------------
 
 
-def test_google_callback_still_creates_two_rows(
-    mock_settings, mock_state, mock_db
-) -> None:
+def test_google_callback_still_creates_two_rows(mock_settings, mock_state, mock_db) -> None:
     """Existing Google flow must be unaffected: two rows (google_calendar + gmail)."""
     token_resp = _mock_token_response(
         {
