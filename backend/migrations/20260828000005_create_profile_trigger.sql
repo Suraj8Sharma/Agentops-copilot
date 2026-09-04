@@ -1,4 +1,4 @@
-﻿-- Migration: 20260828000005_create_profile_trigger
+-- Migration: 20260828000005_create_profile_trigger
 -- Idempotent: yes  Destructive: no
 --
 -- Creates a PostgreSQL trigger that automatically inserts a row into

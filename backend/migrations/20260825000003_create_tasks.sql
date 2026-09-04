@@ -1,4 +1,5 @@
 -- Migration: 20260825000003_create_tasks
+
 -- Idempotent: yes  Destructive: no
 
 create table if not exists public.tasks (
