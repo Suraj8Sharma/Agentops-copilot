@@ -31,9 +31,10 @@ import uuid as _uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, model_validator
 
+from app.agents.runner import run_planner
 from app.core.security import CurrentUser, get_current_user
 from app.db.supabase_client import supabase
 
@@ -114,12 +115,17 @@ class TaskListOut(BaseModel):
 def create_task(
     body: TaskCreate,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    background_tasks: BackgroundTasks,
 ) -> Any:
     """Write a new task row and return it.
 
     The Supabase singleton uses the service-role key, so it bypasses RLS for
     the INSERT.  ``user_id`` is always taken from the verified JWT — the
     request body never supplies it, preventing cross-user injection.
+
+    After the DB insert succeeds the LangGraph planner skeleton is queued as
+    a background task (D13).  The 201 response is sent to the client first;
+    the planner runs asynchronously in the thread-pool.
     """
     payload: dict[str, Any] = {
         "user_id": current_user.id,
@@ -151,6 +157,13 @@ def create_task(
         current_user.id,
         body.input_type,
     )
+
+    # Queue the LangGraph planner skeleton asynchronously (D13).
+    # The 201 is already committed to the client; the planner runs in a thread-pool worker.
+    task_id = result.data[0]["id"]
+    background_tasks.add_task(run_planner, task_id=task_id, user=current_user)
+    logger.info("Planner queued for task_id=%s", task_id)
+
     return result.data[0]
 
 
