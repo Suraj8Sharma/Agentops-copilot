@@ -89,6 +89,7 @@ def _make_supabase_mock(plan_id: str = PLAN_ID, step_id: str = STEP_ID):
 
 def _make_risk_rules_row(tool_name: str, mcp_server: str, tier: str, approval: bool):
     from app.risk.risk_rules import RiskRule
+
     return RiskRule(
         action_type=tool_name,
         mcp_server=mcp_server,
@@ -102,6 +103,7 @@ def _make_risk_rules_row(tool_name: str, mcp_server: str, tier: str, approval: b
 # AC-1: Graph runs three nodes in the correct order
 # ---------------------------------------------------------------------------
 
+
 def test_graph_runs_three_nodes_in_order():
     """Invoking the graph calls intent_classify → plan → risk_tag, in order."""
     call_order = []
@@ -113,6 +115,7 @@ def test_graph_runs_three_nodes_in_order():
     def mock_plan(state):
         call_order.append("plan")
         from app.agents.state import Step
+
         step = Step(tool_name="calendar.list_events", mcp_server="calendar", input_params={})
         return {"plan": [step], "plan_id": PLAN_ID}
 
@@ -121,15 +124,26 @@ def test_graph_runs_three_nodes_in_order():
         decision = {"risk_tier": "low", "requires_approval": False, "rationale": "ok"}
         return {"risk_flags": {0: decision}}
 
-    with patch("app.agents.graph.intent_classify", mock_intent_classify), \
-         patch("app.agents.graph.plan", mock_plan), \
-         patch("app.agents.graph.risk_tag", mock_risk_tag):
+    with (
+        patch("app.agents.graph.intent_classify", mock_intent_classify),
+        patch("app.agents.graph.plan", mock_plan),
+        patch("app.agents.graph.risk_tag", mock_risk_tag),
+    ):
         from app.agents.graph import build_graph
+
         g = build_graph()
         from app.agents.state import AgentState
+
         state = AgentState(
-            task_id=TASK_ID, user_id=USER_ID, raw_input="schedule a call",
-            input_type="text", intent="", plan=[], plan_id=None, risk_flags={}, error=None,
+            task_id=TASK_ID,
+            user_id=USER_ID,
+            raw_input="schedule a call",
+            input_type="text",
+            intent="",
+            plan=[],
+            plan_id=None,
+            risk_flags={},
+            error=None,
         )
         g.invoke(state, config={"configurable": {"thread_id": TASK_ID}})
 
@@ -142,13 +156,17 @@ def test_graph_runs_three_nodes_in_order():
 # AC-2: intent_classify stub keyword mapping
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw_input,expected_intent", [
-    ("schedule a meeting with professor", "schedule_event_external"),
-    ("send an email to the team", "send_email"),
-    ("create a github issue for the bug", "file_issue"),
-    ("show me my calendar events", "read_calendar"),
-    ("schedule a call internally", "schedule_event"),
-])
+
+@pytest.mark.parametrize(
+    "raw_input,expected_intent",
+    [
+        ("schedule a meeting with professor", "schedule_event_external"),
+        ("send an email to the team", "send_email"),
+        ("create a github issue for the bug", "file_issue"),
+        ("show me my calendar events", "read_calendar"),
+        ("schedule a call internally", "schedule_event"),
+    ],
+)
 def test_intent_classify_stub_maps_known_keywords(raw_input, expected_intent):
     from app.agents.nodes import intent_classify
     from app.agents.state import AgentState
@@ -156,8 +174,15 @@ def test_intent_classify_stub_maps_known_keywords(raw_input, expected_intent):
     with patch("app.agents.nodes.supabase") as mock_sb:
         mock_sb.table.return_value.insert.return_value.execute.return_value = MagicMock(data=[])
         state = AgentState(
-            task_id=TASK_ID, user_id=USER_ID, raw_input=raw_input,
-            input_type="text", intent="", plan=[], plan_id=None, risk_flags={}, error=None,
+            task_id=TASK_ID,
+            user_id=USER_ID,
+            raw_input=raw_input,
+            input_type="text",
+            intent="",
+            plan=[],
+            plan_id=None,
+            risk_flags={},
+            error=None,
         )
         result = intent_classify(state)
 
@@ -173,8 +198,15 @@ def test_intent_classify_unmatched_returns_unclassified():
     with patch("app.agents.nodes.supabase") as mock_sb:
         mock_sb.table.return_value.insert.return_value.execute.return_value = MagicMock(data=[])
         state = AgentState(
-            task_id=TASK_ID, user_id=USER_ID, raw_input="do something random xyz",
-            input_type="text", intent="", plan=[], plan_id=None, risk_flags={}, error=None,
+            task_id=TASK_ID,
+            user_id=USER_ID,
+            raw_input="do something random xyz",
+            input_type="text",
+            intent="",
+            plan=[],
+            plan_id=None,
+            risk_flags={},
+            error=None,
         )
         result = intent_classify(state)
 
@@ -185,6 +217,7 @@ def test_intent_classify_unmatched_returns_unclassified():
 # AC-3: plan node writes task_plans row with correct fields
 # ---------------------------------------------------------------------------
 
+
 def test_plan_writes_task_plans_row():
     from app.agents.nodes import plan
     from app.agents.state import AgentState
@@ -193,9 +226,15 @@ def test_plan_writes_task_plans_row():
 
     with patch("app.agents.nodes.supabase", mock_sb):
         state = AgentState(
-            task_id=TASK_ID, user_id=USER_ID, raw_input="schedule a call",
-            input_type="text", intent="schedule_event", plan=[], plan_id=None,
-            risk_flags={}, error=None,
+            task_id=TASK_ID,
+            user_id=USER_ID,
+            raw_input="schedule a call",
+            input_type="text",
+            intent="schedule_event",
+            plan=[],
+            plan_id=None,
+            risk_flags={},
+            error=None,
         )
         result = plan(state)
 
@@ -214,6 +253,7 @@ def test_plan_writes_task_plans_row():
 # ---------------------------------------------------------------------------
 # AC-4: plan node sets task status to "planning"
 # ---------------------------------------------------------------------------
+
 
 def test_plan_sets_task_status_to_planning():
     from app.agents.nodes import plan
@@ -240,9 +280,15 @@ def test_plan_sets_task_status_to_planning():
 
     with patch("app.agents.nodes.supabase", mock_sb):
         state = AgentState(
-            task_id=TASK_ID, user_id=USER_ID, raw_input="schedule a call",
-            input_type="text", intent="schedule_event", plan=[], plan_id=None,
-            risk_flags={}, error=None,
+            task_id=TASK_ID,
+            user_id=USER_ID,
+            raw_input="schedule a call",
+            input_type="text",
+            intent="schedule_event",
+            plan=[],
+            plan_id=None,
+            risk_flags={},
+            error=None,
         )
         plan(state)
 
@@ -255,6 +301,7 @@ def test_plan_sets_task_status_to_planning():
 # AC-5: risk_tag writes plan_steps rows with correct risk tiers from DB
 # ---------------------------------------------------------------------------
 
+
 def test_risk_tag_writes_plan_steps_correct_tiers():
     import app.risk.risk_rules as rr
     from app.agents.nodes import risk_tag
@@ -262,17 +309,22 @@ def test_risk_tag_writes_plan_steps_correct_tiers():
 
     rr.invalidate_cache()
 
-    known_rule = _make_risk_rules_row(
-        "calendar.list_events", "calendar", "low", False
-    )
+    known_rule = _make_risk_rules_row("calendar.list_events", "calendar", "low", False)
 
-    with patch("app.agents.nodes.lookup", return_value=known_rule), \
-         patch("app.agents.nodes.supabase", _make_supabase_mock()):
+    with (
+        patch("app.agents.nodes.lookup", return_value=known_rule),
+        patch("app.agents.nodes.supabase", _make_supabase_mock()),
+    ):
         state = AgentState(
-            task_id=TASK_ID, user_id=USER_ID, raw_input="check calendar",
-            input_type="text", intent="read_calendar",
+            task_id=TASK_ID,
+            user_id=USER_ID,
+            raw_input="check calendar",
+            input_type="text",
+            intent="read_calendar",
             plan=[Step(tool_name="calendar.list_events", mcp_server="calendar", input_params={})],
-            plan_id=PLAN_ID, risk_flags={}, error=None,
+            plan_id=PLAN_ID,
+            risk_flags={},
+            error=None,
         )
         result = risk_tag(state)
 
@@ -285,17 +337,25 @@ def test_risk_tag_writes_plan_steps_correct_tiers():
 # AC-6: risk_tag fails-closed on unknown action type
 # ---------------------------------------------------------------------------
 
+
 def test_risk_tag_fails_closed_on_unknown_action():
     from app.agents.nodes import risk_tag
     from app.agents.state import AgentState, Step
 
-    with patch("app.agents.nodes.lookup", return_value=None), \
-         patch("app.agents.nodes.supabase", _make_supabase_mock()):
+    with (
+        patch("app.agents.nodes.lookup", return_value=None),
+        patch("app.agents.nodes.supabase", _make_supabase_mock()),
+    ):
         state = AgentState(
-            task_id=TASK_ID, user_id=USER_ID, raw_input="do something unknown",
-            input_type="text", intent="unknown",
+            task_id=TASK_ID,
+            user_id=USER_ID,
+            raw_input="do something unknown",
+            input_type="text",
+            intent="unknown",
             plan=[Step(tool_name="unknown.action", mcp_server="calendar", input_params={})],
-            plan_id=PLAN_ID, risk_flags={}, error=None,
+            plan_id=PLAN_ID,
+            risk_flags={},
+            error=None,
         )
         result = risk_tag(state)
 
@@ -307,6 +367,7 @@ def test_risk_tag_fails_closed_on_unknown_action():
 # ---------------------------------------------------------------------------
 # AC-7: execution_logs written per node
 # ---------------------------------------------------------------------------
+
 
 def test_execution_logs_written_per_node():
     """After a full graph run, execution_logs receives ≥3 inserts:
@@ -335,14 +396,23 @@ def test_execution_logs_written_per_node():
         "calendar.create_event_internal_only", "calendar", "medium", False
     )
 
-    with patch("app.agents.nodes.supabase", mock_sb), \
-         patch("app.agents.nodes.lookup", return_value=known_rule):
+    with (
+        patch("app.agents.nodes.supabase", mock_sb),
+        patch("app.agents.nodes.lookup", return_value=known_rule),
+    ):
         from app.agents.nodes import intent_classify, plan, risk_tag
         from app.agents.state import AgentState
 
         state = AgentState(
-            task_id=TASK_ID, user_id=USER_ID, raw_input="schedule a call",
-            input_type="text", intent="", plan=[], plan_id=None, risk_flags={}, error=None,
+            task_id=TASK_ID,
+            user_id=USER_ID,
+            raw_input="schedule a call",
+            input_type="text",
+            intent="",
+            plan=[],
+            plan_id=None,
+            risk_flags={},
+            error=None,
         )
         s1 = {**state, **intent_classify(state)}
         s2 = {**s1, **plan(s1)}
@@ -356,6 +426,7 @@ def test_execution_logs_written_per_node():
 # ---------------------------------------------------------------------------
 # AC-8: unclassified intent sets state.error and marks task failed
 # ---------------------------------------------------------------------------
+
 
 def test_unclassified_intent_sets_task_error():
     from app.agents.nodes import plan
@@ -381,9 +452,15 @@ def test_unclassified_intent_sets_task_error():
 
     with patch("app.agents.nodes.supabase", mock_sb):
         state = AgentState(
-            task_id=TASK_ID, user_id=USER_ID, raw_input="xyz random nonsense",
-            input_type="text", intent="unclassified", plan=[], plan_id=None,
-            risk_flags={}, error=None,
+            task_id=TASK_ID,
+            user_id=USER_ID,
+            raw_input="xyz random nonsense",
+            input_type="text",
+            intent="unclassified",
+            plan=[],
+            plan_id=None,
+            risk_flags={},
+            error=None,
         )
         result = plan(state)
 

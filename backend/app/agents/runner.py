@@ -1,4 +1,4 @@
-﻿"""Planner runner — entry-point called from the FastAPI background task.
+"""Planner runner — entry-point called from the FastAPI background task.
 
 ``run_planner`` is the single function that:
   1. Builds the compiled graph (cached at module level after first call).
@@ -57,8 +57,8 @@ def run_planner(task_id: str, user: CurrentUser) -> None:
         task_id=task_id,
         user_id=user.id,
         raw_input=_fetch_raw_input(task_id),
-        input_type="text",      # voice tasks always arrive with transcription_text
-                                # already populated — treated as text here for D13
+        input_type="text",  # voice tasks always arrive with transcription_text
+        # already populated — treated as text here for D13
         intent="",
         plan=[],
         plan_id=None,
@@ -90,9 +90,7 @@ def run_planner(task_id: str, user: CurrentUser) -> None:
         )
         # Best-effort: mark the task failed so it does not stay "submitted".
         try:
-            supabase.table("tasks").update({"status": "failed"}).eq(
-                "id", task_id
-            ).execute()
+            supabase.table("tasks").update({"status": "failed"}).eq("id", task_id).execute()
         except Exception:
             logger.error(
                 "run_planner: also failed to mark task as failed [task_id=%s]",

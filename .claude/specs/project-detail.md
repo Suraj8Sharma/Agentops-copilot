@@ -621,7 +621,35 @@ Every arrow above corresponds to a conditional edge in the graph, not a hardcode
 - Transient errors (timeout, 5xx from an MCP server, a rate-limited LLM call) increment retries\[step\] and retry with exponential backoff, capped at 3 attempts before the step is marked failed and the graph halts with a clear error surfaced to the Activity Log.
 - A mixed-risk multi-step plan (e.g. create an event, then email an attendee) executes low-risk steps as they become ready and pauses only the specific step that is high-risk — later low-risk steps that don't depend on the paused step's output are not blocked behind it.
 
-## **8.2 MCP Client Contract**
+## **8.2 MCP Client Architecture**
+
+All four providers are integrated via the **Model Context Protocol (MCP)** using official, cloud-hosted remote MCP servers. This makes AgentOps a genuinely MCP-native application — the execute node communicates with tools exclusively through the MCP JSON-RPC protocol, not through direct REST API wrappers.
+
+### **Why Official Remote MCP Servers**
+
+Each provider now maintains an official hosted MCP endpoint:
+
+| **Provider**     | **Official MCP Endpoint**                        | **Hosted by** |
+| ---------------- | ------------------------------------------------ | ------------- |
+| Google Calendar  | `https://calendarmcp.googleapis.com/mcp/v1`      | Google        |
+| Gmail            | `https://gmailmcp.googleapis.com/mcp/v1`         | Google        |
+| GitHub           | Official GitHub MCP remote endpoint              | GitHub        |
+| Slack            | `https://mcp.slack.com/mcp`                      | Slack         |
+
+These are cloud-hosted, persistent services. There are no subprocesses to spawn, no Node.js runtime required on Render, and no session lifecycle to manage. Each tool call is a standard HTTP POST with the user's OAuth token in the `Authorization` header — making per-user multi-tenancy trivially correct.
+
+### **How Per-User Auth Works**
+
+Every user's OAuth token is stored in `oauth_connections` (written during D8-D10). When the execute node runs a step for a given user:
+
+1. Fetch that user's token for the relevant provider from `oauth_connections`.
+2. Call the official MCP endpoint with `Authorization: Bearer <user_token>`.
+3. The hosted MCP server uses that token to call the provider API on the user's behalf.
+4. Result is returned as a standard MCP JSON-RPC response.
+
+Alice's token goes to Alice's Calendar. Bob's token goes to Bob's GitHub. They never mix. No proxy, no session store, no subprocesses.
+
+### **MCP Client Envelope**
 
 Every provider client (calendar_client.py, gmail_client.py, github_client.py, slack_client.py) implements the identical envelope below, so the planner and the risk gate never contain provider-specific branching.
 
@@ -636,9 +664,15 @@ Every provider client (calendar_client.py, gmail_client.py, github_client.py, sl
 | error           | response      | Typed error code + human-readable message on failure                                                                                                                                                                                       |
 | latency_ms      | response      | Logged to execution_logs on every call                                                                                                                                                                                                     |
 
+### **Design Decision Record**
+
+See `docs/decisions/mcp-wrapper-vs-native.md` for the full analysis of why official remote MCP servers were chosen over REST wrappers or per-user stdio subprocess spawning. Short version: official hosted endpoints solve multi-tenancy via per-request OAuth token injection, with no infrastructure overhead.
+
 ## **8.3 Per-Provider Workflows**
 
 ### **Google Calendar MCP**
+
+**Integration:** Official Google remote MCP server (`https://calendarmcp.googleapis.com/mcp/v1`). Currently in Developer Preview. Requires Calendar API enabled in GCP project. Auth: user's Google OAuth token in `Authorization` header per request.
 
 Used for any scheduling step. list_events and find_free_slots are read-only and inform the planner before it proposes a create/update step.
 
@@ -668,18 +702,25 @@ _Example plan_steps.input_params:_
 
 }}
 
-### **Gmail MCP**
+### **Gmail — Read/Draft via MCP, Send via Resend**
+
+**Architecture decision:** Gmail is split across two integrations:
+
+- **Gmail MCP server** (official Google remote MCP, Developer Preview) — handles list, read, and draft operations via MCP JSON-RPC. Auth: user's Google OAuth token in `Authorization` header per request.
+- **Resend** (transactional email API, free tier: 3,000 emails/month) — handles all outbound sending. Auth: Resend API key (single key in `.env`, not per-user). From-address is a verified sender domain configured once.
+
+**Why Resend for sending:** Gmail's official MCP server does not yet support `send_message` reliably in Developer Preview. Resend is a standard transactional email service with better deliverability than direct Gmail SMTP, a trivial REST API, and a generous free tier that comfortably covers the capstone demo load. This is a common production pattern — mailbox reads from the user's own account, outbound delivery through a dedicated transactional service.
 
 Draft creation is low risk and never blocks; sending is always treated as high risk regardless of recipient, because an email is not reversible once sent.
 
-| **Tool**            | **Purpose**                         | **Default risk tier** | **Approval default**        |
-| ------------------- | ----------------------------------- | --------------------- | --------------------------- |
-| gmail.list_messages | Read recent messages for context    | low                   | No                          |
-| gmail.get_message   | Read a single message body          | low                   | No                          |
-| gmail.create_draft  | Prepare an email without sending it | low                   | No                          |
-| gmail.send_message  | Send an email                       | high                  | Yes — always, no exceptions |
+| **Tool**            | **Purpose**                         | **Integration** | **Default risk tier** | **Approval default**        |
+| ------------------- | ----------------------------------- | --------------- | --------------------- | --------------------------- |
+| gmail.list_messages | Read recent messages for context    | Gmail MCP       | low                   | No                          |
+| gmail.get_message   | Read a single message body          | Gmail MCP       | low                   | No                          |
+| gmail.create_draft  | Prepare an email without sending it | Gmail MCP       | low                   | No                          |
+| gmail.send_message  | Send an email                       | Resend API      | high                  | Yes — always, no exceptions |
 
-_Example plan_steps.input_params:_
+_Example plan_steps.input_params (send):_
 
 {"tool_name": "gmail.send_message",
 
@@ -693,7 +734,13 @@ _Example plan_steps.input_params:_
 
 "body": "Hi Professor Rao, ..." }}
 
+_The execute node routes `gmail.send_message` to the Resend client, not the Gmail MCP server. All other gmail.* tools route to the Gmail MCP server._
+
+
+
 ### **GitHub MCP**
+
+**Integration:** Official GitHub remote MCP server. Hosted by GitHub. Auth: user's GitHub OAuth token in `Authorization` header per request. Stable and production-grade.
 
 Scoped to issue-level interactions only in the MVP — no PR merges, no repo administration, deliberately narrower than the OAuth app's technical ceiling.
 
@@ -719,6 +766,8 @@ _Example plan_steps.input_params:_
 "body": "Filed from Task #482" }}
 
 ### **Slack MCP**
+
+**Integration:** Official Slack-hosted MCP server (`https://mcp.slack.com/mcp`). Generally available, production-grade. Auth: Slack OAuth token (bot token with required scopes) per request via `Authorization` header.
 
 Posting to a public/shared channel is treated as higher risk than a direct message, since a public post is visible to a whole workspace instantly.
 

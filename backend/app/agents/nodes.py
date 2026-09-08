@@ -1,13 +1,15 @@
-"""LangGraph node functions for the D13 planner skeleton.
+"""LangGraph node functions for the AgentOps Copilot planner.
 
-Three nodes are wired today:
+Nodes wired as of D14:
 
-    intent_classify  → plan  → risk_tag
+    intent_classify  →  plan  →  risk_tag  →  execute  →  END
+                                              (low-risk steps only;
+                                               high-risk steps skipped
+                                               until approval_gate: D17)
 
-None of these nodes make LLM calls (that is D18).  intent_classify and plan
-use deterministic stub logic so the full pipeline can be tested without any
-external API key.  risk_tag performs a real DB read against the seeded
-risk_rules table — the fail-closed behaviour must be correct from day one.
+intent_classify and plan use deterministic stub logic (no LLM — that is D18).
+risk_tag performs a real DB read against the seeded risk_rules table.
+execute calls official hosted remote MCP servers with the user's OAuth token.
 
 Each node function:
   - Receives the full AgentState dict.
@@ -24,6 +26,7 @@ from typing import Any
 
 from app.agents.state import AgentState, RiskDecision, Step
 from app.db.supabase_client import supabase
+from app.mcp_clients import call_tool
 from app.risk.risk_rules import lookup
 
 logger = logging.getLogger(__name__)
@@ -209,9 +212,7 @@ def plan(state: AgentState) -> dict[str, Any]:
 
     # --- DB write 1: UPDATE tasks.status → "planning" ---
     try:
-        supabase.table("tasks").update({"status": "planning"}).eq(
-            "id", state["task_id"]
-        ).execute()
+        supabase.table("tasks").update({"status": "planning"}).eq("id", state["task_id"]).execute()
     except Exception:
         logger.warning(
             "Failed to set task status=planning [task_id=%s]",
@@ -349,9 +350,7 @@ def risk_tag(state: AgentState) -> dict[str, Any]:
     # --- DB write: UPDATE task_plans.status → "active" ---
     if plan_id:
         try:
-            supabase.table("task_plans").update({"status": "active"}).eq(
-                "id", plan_id
-            ).execute()
+            supabase.table("task_plans").update({"status": "active"}).eq("id", plan_id).execute()
         except Exception:
             logger.warning(
                 "risk_tag: failed to set task_plans active [plan_id=%s]",
@@ -367,3 +366,196 @@ def risk_tag(state: AgentState) -> dict[str, Any]:
         latency_ms,
     )
     return {"risk_flags": risk_flags}
+
+
+# ---------------------------------------------------------------------------
+# Node: execute
+# ---------------------------------------------------------------------------
+
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_BASE = 2  # seconds; retry 1→2s, 2→4s, 3→8s
+
+
+def execute(state: AgentState) -> dict[str, Any]:
+    """Execute all low-risk plan steps via official hosted remote MCP servers.
+
+    High-risk steps (requires_approval=True) are skipped here — they will be
+    handled by the approval_gate node (D17).  For now they are logged as
+    'awaiting_approval' and left in pending status.
+
+    Each low-risk step:
+      - Calls the appropriate MCP client (routed by mcp_server field).
+      - Retries up to 3 times on transient errors (exponential backoff).
+      - Writes an execution_logs row before and after the MCP call.
+      - Updates plan_steps.status to 'completed' or 'failed'.
+
+    Final tasks.status:
+      - 'completed'  — all non-approval steps finished successfully.
+      - 'failed'     — any step failed after all retries.
+      - 'planning'   — at least one step is awaiting_approval (D17 will advance).
+    """
+    steps: list[Step] = state.get("plan") or []
+    risk_flags: dict[int, Any] = state.get("risk_flags") or {}
+    plan_id: str | None = state.get("plan_id")
+    task_id: str = state["task_id"]
+    user_id: str = state["user_id"]
+
+    # If a prior node already set an error (e.g. unclassified intent in plan),
+    # skip execution entirely — tasks.status is already "failed".
+    if state.get("error"):
+        logger.info(
+            "execute: skipping — state.error already set [task_id=%s error=%s]",
+            task_id,
+            state["error"],
+        )
+        return {"step_results": {}, "retries": {}, "current_step_index": 0}
+
+    step_results: dict[int, Any] = {}
+    retries: dict[int, int] = {}
+    has_failure = False
+    has_pending_approval = False
+
+    for idx, step in enumerate(steps):
+        idempotency_key = f"{plan_id}:{idx}"
+        risk = risk_flags.get(idx, {})
+
+        # --- Skip high-risk steps: approval required (D17) -------------------
+        if risk.get("requires_approval", True):
+            has_pending_approval = True
+            logger.info(
+                "execute: step %d requires approval — skipping [task_id=%s tool=%s]",
+                idx,
+                task_id,
+                step["tool_name"],
+            )
+            _log_event(
+                task_id=task_id,
+                agent_name="executor",
+                event_type="step_awaiting_approval",
+                payload={"step_index": idx, "tool_name": step["tool_name"]},
+            )
+            continue
+
+        # --- Execute with retry -----------------------------------------------
+        attempt = 0
+        result: dict[str, Any] | None = None
+
+        while attempt < _MAX_RETRIES:
+            attempt += 1
+            _log_event(
+                task_id=task_id,
+                agent_name="executor",
+                event_type="step_started",
+                payload={
+                    "step_index": idx,
+                    "tool_name": step["tool_name"],
+                    "mcp_server": step["mcp_server"],
+                    "attempt": attempt,
+                },
+            )
+
+            result = call_tool(
+                tool_name=step["tool_name"],
+                mcp_server=step["mcp_server"],
+                input_params=step["input_params"],
+                user_id=user_id,
+                idempotency_key=idempotency_key,
+            )
+
+            if result["status"] == "success":
+                break
+
+            # Transient: retry on rate_limited or timeout
+            if result["status"] in ("rate_limited", "error") and attempt < _MAX_RETRIES:
+                backoff = _RETRY_BACKOFF_BASE**attempt
+                logger.warning(
+                    "execute: step %d attempt %d/%d failed [%s] — retrying in %ds",
+                    idx,
+                    attempt,
+                    _MAX_RETRIES,
+                    result.get("error"),
+                    backoff,
+                )
+                retries[idx] = attempt
+                time.sleep(backoff)
+            else:
+                break
+
+        retries[idx] = attempt - 1  # retries = extra attempts beyond the first
+
+        # --- Write result to DB -----------------------------------------------
+        step_status = "completed" if result and result["status"] == "success" else "failed"
+        _log_event(
+            task_id=task_id,
+            agent_name="executor",
+            event_type="step_completed" if step_status == "completed" else "step_failed",
+            payload={
+                "step_index": idx,
+                "tool_name": step["tool_name"],
+                "status": step_status,
+                "output": result.get("output") if result else None,
+                "error": result.get("error") if result else "no result",
+                "latency_ms": result.get("latency_ms") if result else None,
+                "attempts": attempt,
+            },
+            latency_ms=result.get("latency_ms") if result else None,
+        )
+
+        # Update plan_steps row
+        if plan_id:
+            try:
+                supabase.table("plan_steps").update(
+                    {
+                        "status": step_status,
+                        "result": result.get("output") if result else None,
+                        "error_message": result.get("error") if result else "no result",
+                    }
+                ).eq("plan_id", plan_id).eq("step_index", idx).execute()
+            except Exception:
+                logger.warning(
+                    "execute: failed to update plan_steps [plan_id=%s step=%d]",
+                    plan_id,
+                    idx,
+                    exc_info=True,
+                )
+
+        step_results[idx] = result
+        if step_status == "failed":
+            has_failure = True
+            logger.error(
+                "execute: step %d failed after %d attempts [task_id=%s tool=%s error=%s]",
+                idx,
+                attempt,
+                task_id,
+                step["tool_name"],
+                result.get("error") if result else "unknown",
+            )
+            break  # halt on first failure — do not run subsequent steps
+
+    # --- Update tasks.status -------------------------------------------------
+    if has_failure:
+        final_status = "failed"
+    elif has_pending_approval:
+        # Leave at "planning" — approval_gate (D17) will advance to "completed"
+        final_status = "planning"
+    else:
+        final_status = "completed"
+
+    try:
+        supabase.table("tasks").update({"status": final_status}).eq("id", task_id).execute()
+    except Exception:
+        logger.warning(
+            "execute: failed to update tasks.status [task_id=%s]", task_id, exc_info=True
+        )
+
+    logger.info(
+        "execute: finished task_id=%s status=%s steps_run=%d",
+        task_id,
+        final_status,
+        len(step_results),
+    )
+    return {
+        "step_results": step_results,
+        "retries": retries,
+        "current_step_index": len(steps) - 1,
+    }

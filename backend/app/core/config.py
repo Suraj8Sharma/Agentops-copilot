@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     FCM_SERVER_KEY: str = ""
     RENDER_DEPLOY_HOOK_URL: str = ""
 
+    # -------------------------------------------------------------------------
+    # Resend (outbound email) — required from D15
+    # -------------------------------------------------------------------------
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_ADDRESS: str = ""
+
 
 # Single shared instance — import this everywhere.
 settings = Settings()
