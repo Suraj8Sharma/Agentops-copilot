@@ -50,8 +50,8 @@ GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 # Verified against the official Google Gmail MCP Developer Preview docs.
 _MCP_TOOL_MAP: dict[str, str] = {
     "gmail.list_messages": "search_threads",  # MCP server has no list_messages tool
-    "gmail.get_message":   "get_message",
-    "gmail.create_draft":  "create_draft",
+    "gmail.get_message": "get_message",
+    "gmail.create_draft": "create_draft",
 }
 
 # Tools routed to the Gmail REST API directly (MCP server has no send capability).
@@ -186,9 +186,7 @@ def _call_gmail_mcp(
     try:
         response = httpx.post(GMAIL_MCP_URL, json=payload, headers=headers, timeout=_TIMEOUT)
     except httpx.TimeoutException:
-        logger.warning(
-            "gmail: timeout calling MCP server [tool=%s user=%s]", tool_name, user_id
-        )
+        logger.warning("gmail: timeout calling MCP server [tool=%s user=%s]", tool_name, user_id)
         return {
             "status": "error",
             "output": None,
@@ -209,7 +207,12 @@ def _call_gmail_mcp(
     # 5. Handle HTTP-level errors
     if response.status_code == 429:
         logger.warning("gmail: rate limited [tool=%s user=%s]", tool_name, user_id)
-        return {"status": "rate_limited", "output": None, "error": "rate_limited", "latency_ms": latency_ms}
+        return {
+            "status": "rate_limited",
+            "output": None,
+            "error": "rate_limited",
+            "latency_ms": latency_ms,
+        }
 
     if response.status_code == 401:
         logger.warning("gmail: 401 unauthorized [tool=%s user=%s]", tool_name, user_id)
@@ -223,7 +226,9 @@ def _call_gmail_mcp(
     if not response.is_success:
         logger.error(
             "gmail: HTTP %d from MCP server [tool=%s user=%s]",
-            response.status_code, tool_name, user_id,
+            response.status_code,
+            tool_name,
+            user_id,
         )
         return {
             "status": "error",
@@ -248,7 +253,9 @@ def _call_gmail_mcp(
         rpc_error = body["error"]
         logger.warning(
             "gmail: MCP RPC error [tool=%s code=%s msg=%s]",
-            tool_name, rpc_error.get("code"), rpc_error.get("message"),
+            tool_name,
+            rpc_error.get("code"),
+            rpc_error.get("message"),
         )
         return {
             "status": "error",
@@ -292,7 +299,8 @@ def _call_gmail_send(
         if cached is not None:
             logger.info(
                 "gmail: send skipped — step already done [plan_id=%s step=%d]",
-                plan_id, step_index,
+                plan_id,
+                step_index,
             )
             return {
                 "status": "success",
@@ -368,7 +376,12 @@ def _call_gmail_send(
     # 5. Handle response
     if response.status_code == 429:
         logger.warning("gmail: send rate limited [user=%s]", user_id)
-        return {"status": "rate_limited", "output": None, "error": "rate_limited", "latency_ms": latency_ms}
+        return {
+            "status": "rate_limited",
+            "output": None,
+            "error": "rate_limited",
+            "latency_ms": latency_ms,
+        }
 
     if response.status_code == 401:
         logger.warning("gmail: send 401 unauthorized [user=%s]", user_id)
@@ -393,9 +406,7 @@ def _call_gmail_send(
             detail = response.json().get("error", {}).get("message", "")
         except Exception:
             detail = ""
-        logger.error(
-            "gmail: send HTTP %d [user=%s] %s", response.status_code, user_id, detail
-        )
+        logger.error("gmail: send HTTP %d [user=%s] %s", response.status_code, user_id, detail)
         return {
             "status": "error",
             "output": None,
@@ -411,7 +422,9 @@ def _call_gmail_send(
     output = {"id": body.get("id"), "threadId": body.get("threadId")}
     logger.info(
         "gmail: send success [user=%s msg_id=%s latency=%dms]",
-        user_id, output.get("id"), latency_ms,
+        user_id,
+        output.get("id"),
+        latency_ms,
     )
     return {"status": "success", "output": output, "error": None, "latency_ms": latency_ms}
 

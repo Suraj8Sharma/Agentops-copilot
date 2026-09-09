@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # D16 adds github and slack.
 _ROUTER = {
     "calendar": calendar,
-    "gmail":    gmail,
+    "gmail": gmail,
 }
 
 
