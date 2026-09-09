@@ -71,10 +71,10 @@ class Settings(BaseSettings):
     RENDER_DEPLOY_HOOK_URL: str = ""
 
     # -------------------------------------------------------------------------
-    # Resend (outbound email) — required from D15
+    # D15 note: gmail.send_message routes through the Gmail REST API using the
+    # user's own OAuth token (oauth_connections, provider='gmail').
+    # No additional env vars are required for Gmail sending.
     # -------------------------------------------------------------------------
-    RESEND_API_KEY: str = ""
-    RESEND_FROM_ADDRESS: str = ""
 
 
 # Single shared instance — import this everywhere.
