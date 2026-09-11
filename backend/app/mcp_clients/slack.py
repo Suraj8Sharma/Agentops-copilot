@@ -37,23 +37,26 @@ SLACK_MCP_URL = "https://mcp.slack.com/mcp"
 _TIMEOUT = 15.0
 
 _TOOL_NAME_MAP: dict[str, str] = {
-    "slack.list_channels":        "list_channels",
-    "slack.post_message_dm":      "post_message",
+    "slack.list_channels": "list_channels",
+    "slack.post_message_dm": "post_message",
     "slack.post_message_channel": "post_message",
-    "slack.add_reaction":         "add_reaction",
+    "slack.add_reaction": "add_reaction",
 }
 
 # Tools that mutate state — need idempotency precheck.
-_MUTATING_TOOLS: frozenset[str] = frozenset({
-    "slack.post_message_dm",
-    "slack.post_message_channel",
-    "slack.add_reaction",
-})
+_MUTATING_TOOLS: frozenset[str] = frozenset(
+    {
+        "slack.post_message_dm",
+        "slack.post_message_channel",
+        "slack.add_reaction",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Token fetch
 # ---------------------------------------------------------------------------
+
 
 def _fetch_slack_token(user_id: str) -> str | None:
     """Fetch and decrypt the user's Slack token from oauth_connections."""
@@ -86,6 +89,7 @@ def _fetch_slack_token(user_id: str) -> str | None:
 # Idempotency precheck
 # ---------------------------------------------------------------------------
 
+
 def _already_done(plan_id: str, step_index: int) -> dict | None:
     """Return cached output if this step already completed successfully."""
     try:
@@ -102,7 +106,9 @@ def _already_done(plan_id: str, step_index: int) -> dict | None:
     except Exception:
         logger.warning(
             "slack: idempotency precheck failed for plan_id=%s step=%d — proceeding",
-            plan_id, step_index, exc_info=True,
+            plan_id,
+            step_index,
+            exc_info=True,
         )
     return None
 
@@ -110,6 +116,7 @@ def _already_done(plan_id: str, step_index: int) -> dict | None:
 # ---------------------------------------------------------------------------
 # Execution log stub
 # ---------------------------------------------------------------------------
+
 
 async def _log_execution(event_type: str, payload: dict, latency_ms: int) -> None:
     """Log to execution_logs table."""
@@ -121,6 +128,7 @@ async def _log_execution(event_type: str, payload: dict, latency_ms: int) -> Non
 # Core tool call
 # ---------------------------------------------------------------------------
 
+
 def _make_error(code: str, message: str, latency_ms: int) -> dict[str, Any]:
     return {
         "status": "error",
@@ -128,6 +136,7 @@ def _make_error(code: str, message: str, latency_ms: int) -> dict[str, Any]:
         "error": {"code": code, "message": message},
         "latency_ms": latency_ms,
     }
+
 
 def _call_slack_mcp(
     tool_name: str,
@@ -167,13 +176,22 @@ def _call_slack_mcp(
 
     # HTTP-level errors
     if response.status_code == 401:
-        return _make_error("AUTH_EXPIRED", "token revoked or expired — user must reconnect Slack", latency_ms)
+        return _make_error(
+            "AUTH_EXPIRED", "token revoked or expired — user must reconnect Slack", latency_ms
+        )
 
     if response.status_code == 429:
-        return {"status": "rate_limited", "output": None, "error": {"code": "RATE_LIMITED", "message": "rate limited"}, "latency_ms": latency_ms}
+        return {
+            "status": "rate_limited",
+            "output": None,
+            "error": {"code": "RATE_LIMITED", "message": "rate limited"},
+            "latency_ms": latency_ms,
+        }
 
     if not response.is_success:
-        return _make_error("PROVIDER_ERROR", f"Slack MCP returned HTTP {response.status_code}", latency_ms)
+        return _make_error(
+            "PROVIDER_ERROR", f"Slack MCP returned HTTP {response.status_code}", latency_ms
+        )
 
     # Parse JSON response
     try:
@@ -184,7 +202,6 @@ def _call_slack_mcp(
 
     if "error" in body:
         rpc_error = body["error"]
-        code = str(rpc_error.get("code", "PROVIDER_ERROR"))
         msg = rpc_error.get("message", "unknown MCP error")
         # Check for invalid params
         if rpc_error.get("code") == -32602:
@@ -199,6 +216,7 @@ def _call_slack_mcp(
 # ---------------------------------------------------------------------------
 # Public entrypoint — called by mcp_clients/__init__.py
 # ---------------------------------------------------------------------------
+
 
 def call(
     tool_name: str,

@@ -51,9 +51,11 @@ _TOOL_NAME_MAP: dict[str, str] = {
 }
 
 # Tools that mutate state — need idempotency precheck.
-_MUTATING_TOOLS: frozenset[str] = frozenset({
-    "github.create_issue",
-})
+_MUTATING_TOOLS: frozenset[str] = frozenset(
+    {
+        "github.create_issue",
+    }
+)
 
 # Per-user session cache: user_id → (session_id, token)
 # ponytail: module-level dict, per-process TTL cache if multiprocess matters
@@ -114,7 +116,9 @@ def _already_done(plan_id: str, step_index: int) -> dict | None:
     except Exception:
         logger.warning(
             "github: idempotency precheck failed for plan_id=%s step=%d — proceeding",
-            plan_id, step_index, exc_info=True,
+            plan_id,
+            step_index,
+            exc_info=True,
         )
     return None
 
@@ -140,6 +144,7 @@ def _parse_sse_json(response: httpx.Response) -> dict:
     for line in response.text.splitlines():
         if line.startswith("data: "):
             import json
+
             return json.loads(line[6:])
 
     raise ValueError("no data: line found in SSE response")
@@ -292,10 +297,17 @@ def _call_github_mcp(
     # HTTP-level errors
     if response.status_code == 401:
         _invalidate_session(user_id)
-        return _make_error("AUTH_EXPIRED", "token revoked or expired — user must reconnect GitHub", latency_ms)
+        return _make_error(
+            "AUTH_EXPIRED", "token revoked or expired — user must reconnect GitHub", latency_ms
+        )
 
     if response.status_code == 429:
-        return {"status": "rate_limited", "output": None, "error": {"code": "RATE_LIMITED", "message": "rate limited"}, "latency_ms": latency_ms}
+        return {
+            "status": "rate_limited",
+            "output": None,
+            "error": {"code": "RATE_LIMITED", "message": "rate limited"},
+            "latency_ms": latency_ms,
+        }
 
     # Session rejected — retry once with fresh session
     if response.status_code in (404, 410):
@@ -311,7 +323,9 @@ def _call_github_mcp(
         latency_ms = int((time.monotonic() - t0) * 1000)
 
     if not response.is_success:
-        return _make_error("PROVIDER_ERROR", f"GitHub MCP returned HTTP {response.status_code}", latency_ms)
+        return _make_error(
+            "PROVIDER_ERROR", f"GitHub MCP returned HTTP {response.status_code}", latency_ms
+        )
 
     # Parse SSE response
     try:
@@ -322,7 +336,6 @@ def _call_github_mcp(
 
     if "error" in body:
         rpc_error = body["error"]
-        code = str(rpc_error.get("code", "PROVIDER_ERROR"))
         msg = rpc_error.get("message", "unknown MCP error")
         # Check for invalid params
         if rpc_error.get("code") == -32602:

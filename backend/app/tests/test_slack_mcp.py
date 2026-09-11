@@ -20,15 +20,14 @@ IDEMPOTENCY_KEY = f"{PLAN_ID}:0"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_supabase(token=SLACK_TOKEN_PLAINTEXT):
     """Mock supabase that returns a raw (unencrypted) token."""
     mock = MagicMock()
     chain = MagicMock()
     chain.eq.return_value = chain
     chain.single.return_value = chain
-    chain.execute.return_value = MagicMock(
-        data={"access_token": token} if token else None
-    )
+    chain.execute.return_value = MagicMock(data={"access_token": token} if token else None)
     mock.table.return_value.select.return_value = chain
     return mock
 
@@ -50,6 +49,7 @@ def _make_json_response(status_code, json_body=None):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_slack_call_routes_to_mcp_endpoint():
     """All slack.* tools POST to SLACK_MCP_URL."""
@@ -77,6 +77,7 @@ def test_slack_call_routes_to_mcp_endpoint():
 def test_slack_token_fernet_decrypted():
     """_fetch_slack_token decrypts with Fernet when ENCRYPTION_KEY is set."""
     from cryptography.fernet import Fernet
+
     from app.mcp_clients.slack import _fetch_slack_token
 
     key = Fernet.generate_key().decode()
@@ -106,7 +107,7 @@ def test_slack_tool_name_mapping():
     def post_side(url, **kw):
         posted_bodies.append(kw.get("json"))
         return tool_resp
-    
+
     # We must patch table properly for _already_done precheck to return None
     def table_side(name):
         chain = MagicMock()
@@ -114,7 +115,7 @@ def test_slack_tool_name_mapping():
         chain.eq.return_value = chain
         chain.single.return_value = chain
         if name == "plan_steps":
-            chain.execute.return_value = MagicMock(data=None) # No cached result
+            chain.execute.return_value = MagicMock(data=None)  # No cached result
         else:
             chain.execute.return_value = MagicMock(data={"access_token": SLACK_TOKEN_PLAINTEXT})
         return chain
@@ -151,7 +152,9 @@ def test_slack_idempotency_precheck():
         patch("app.mcp_clients.slack.supabase", mock_sb),
         patch("httpx.post") as mp,
     ):
-        result = call("slack.post_message_channel", {"channel": "C1", "text": "t"}, USER_ID, IDEMPOTENCY_KEY)
+        result = call(
+            "slack.post_message_channel", {"channel": "C1", "text": "t"}, USER_ID, IDEMPOTENCY_KEY
+        )
 
     mp.assert_not_called()
     assert result["status"] == "success"
@@ -264,15 +267,14 @@ def test_slack_token_missing_returns_auth_expired():
 # Router integration
 # ---------------------------------------------------------------------------
 
+
 def test_call_tool_routes_slack_server():
     """call_tool(mcp_server='slack') resolves to slack.call via _ROUTER."""
     from app.mcp_clients import call_tool
 
     with patch("app.mcp_clients.slack.call") as mc:
         mc.return_value = {"status": "success", "output": {}, "error": None, "latency_ms": 5}
-        result = call_tool(
-            "slack.list_channels", "slack", {}, USER_ID, IDEMPOTENCY_KEY
-        )
+        result = call_tool("slack.list_channels", "slack", {}, USER_ID, IDEMPOTENCY_KEY)
 
     mc.assert_called_once_with(
         tool_name="slack.list_channels",

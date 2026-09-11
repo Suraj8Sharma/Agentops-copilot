@@ -25,7 +25,7 @@ Test map vs. spec acceptance criteria (d16_github_mcp_client_spec.md §9):
 from __future__ import annotations
 
 import uuid
-from unittest.mock import MagicMock, patch, call as mock_call
+from unittest.mock import MagicMock, patch
 
 import httpx
 
@@ -46,9 +46,7 @@ def _make_supabase(token=GITHUB_TOKEN_PLAINTEXT):
     chain = MagicMock()
     chain.eq.return_value = chain
     chain.single.return_value = chain
-    chain.execute.return_value = MagicMock(
-        data={"access_token": token} if token else None
-    )
+    chain.execute.return_value = MagicMock(data={"access_token": token} if token else None)
     mock.table.return_value.select.return_value = chain
     return mock
 
@@ -70,6 +68,7 @@ def _make_sse_response(status_code=200, result=None, error=None, session_id="ses
         body = {"jsonrpc": "2.0", "id": 1, "result": result or {}}
 
     import json
+
     resp.text = f"event: message\ndata: {json.dumps(body)}\n\n"
     resp.json.side_effect = ValueError("should use SSE parsing, not .json()")
     return resp
@@ -88,6 +87,7 @@ def _make_json_response(status_code, json_body=None):
 def _clear_session_cache():
     """Clear the module-level session cache between tests."""
     from app.mcp_clients.github import _session_cache
+
     _session_cache.clear()
 
 
@@ -103,7 +103,8 @@ def _patch_init_and_call(mock_sb, call_response, init_session_id="sess-abc"):
         "content-type": "text/event-stream",
     }
     init_body = {
-        "jsonrpc": "2.0", "id": 1,
+        "jsonrpc": "2.0",
+        "id": 1,
         "result": {"protocolVersion": "2025-06-18", "serverInfo": {"name": "github-mcp-server"}},
     }
     init_resp.text = f"event: message\ndata: {json.dumps(init_body)}\n\n"
@@ -156,6 +157,7 @@ def test_github_call_routes_to_mcp_endpoint():
 def test_github_token_fernet_decrypted():
     """_fetch_github_token decrypts with Fernet when ENCRYPTION_KEY is set."""
     from cryptography.fernet import Fernet
+
     from app.mcp_clients.github import _fetch_github_token
 
     key = Fernet.generate_key().decode()
@@ -181,9 +183,10 @@ def test_github_token_fernet_decrypted():
 
 def test_github_sse_response_parsed():
     """GitHub MCP SSE responses are parsed via data: line, not .json()."""
+    import json
+
     from app.mcp_clients.github import _parse_sse_json
 
-    import json
     body = {"jsonrpc": "2.0", "id": 1, "result": {"issue_number": 42}}
     resp = MagicMock()
     resp.headers = {"content-type": "text/event-stream"}
@@ -229,7 +232,7 @@ def test_github_session_reused_across_calls():
 
 def test_github_session_reinit_on_rejection():
     """A 404/410 response triggers session re-init, then retries the call."""
-    from app.mcp_clients.github import call, _session_cache
+    from app.mcp_clients.github import _session_cache, call
 
     _clear_session_cache()
     # Pre-seed a stale session
@@ -246,7 +249,8 @@ def test_github_session_reinit_on_rejection():
 
     # Re-init responses
     init_body = {
-        "jsonrpc": "2.0", "id": 1,
+        "jsonrpc": "2.0",
+        "id": 1,
         "result": {"protocolVersion": "2025-06-18"},
     }
     init_resp = MagicMock()
@@ -319,7 +323,7 @@ def test_github_notifications_initialized_sent():
 
 def test_github_401_returns_auth_expired_no_retry():
     """A 401 returns AUTH_EXPIRED error, no retry attempted."""
-    from app.mcp_clients.github import call, _session_cache
+    from app.mcp_clients.github import _session_cache, call
 
     _clear_session_cache()
     _session_cache[USER_ID] = "existing-session"
@@ -341,7 +345,9 @@ def test_github_401_returns_auth_expired_no_retry():
         patch("app.mcp_clients.github.settings", MagicMock(ENCRYPTION_KEY="")),
         patch("httpx.post", side_effect=post_side),
     ):
-        result = call("github.create_issue", {"repo": "o/r", "title": "bug"}, USER_ID, IDEMPOTENCY_KEY)
+        result = call(
+            "github.create_issue", {"repo": "o/r", "title": "bug"}, USER_ID, IDEMPOTENCY_KEY
+        )
 
     assert result["status"] == "error"
     assert result["error"]["code"] == "AUTH_EXPIRED"
@@ -371,7 +377,9 @@ def test_github_create_issue_idempotency_precheck():
         patch("app.mcp_clients.github.supabase", mock_sb),
         patch("httpx.post") as mp,
     ):
-        result = call("github.create_issue", {"repo": "o/r", "title": "t"}, USER_ID, IDEMPOTENCY_KEY)
+        result = call(
+            "github.create_issue", {"repo": "o/r", "title": "t"}, USER_ID, IDEMPOTENCY_KEY
+        )
 
     mp.assert_not_called()
     assert result["status"] == "success"
@@ -385,8 +393,9 @@ def test_github_create_issue_idempotency_precheck():
 
 def test_github_execution_log_stub_present():
     """_log_execution exists and is callable (async stub)."""
-    from app.mcp_clients.github import _log_execution
     import asyncio
+
+    from app.mcp_clients.github import _log_execution
 
     # Should not raise
     asyncio.run(_log_execution("tool_called", {"tool": "github.create_issue"}, 100))
@@ -399,7 +408,7 @@ def test_github_execution_log_stub_present():
 
 def test_github_429_returns_rate_limited():
     """429 from GitHub MCP → status=rate_limited, code=RATE_LIMITED."""
-    from app.mcp_clients.github import call, _session_cache
+    from app.mcp_clients.github import _session_cache, call
 
     _clear_session_cache()
     _session_cache[USER_ID] = "sess"
@@ -423,7 +432,7 @@ def test_github_429_returns_rate_limited():
 
 def test_github_timeout_returns_timeout_error():
     """httpx.TimeoutException → TIMEOUT error code."""
-    from app.mcp_clients.github import call, _session_cache
+    from app.mcp_clients.github import _session_cache, call
 
     _clear_session_cache()
     _session_cache[USER_ID] = "sess"
@@ -456,7 +465,7 @@ def test_github_unknown_tool_returns_invalid_params():
 
 def test_github_5xx_returns_provider_error():
     """A 500 from GitHub MCP → PROVIDER_ERROR."""
-    from app.mcp_clients.github import call, _session_cache
+    from app.mcp_clients.github import _session_cache, call
 
     _clear_session_cache()
     _session_cache[USER_ID] = "sess"
