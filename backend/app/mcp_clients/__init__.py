@@ -29,14 +29,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.mcp_clients import calendar
+from app.mcp_clients import calendar, gmail
 
 logger = logging.getLogger(__name__)
 
 # Maps mcp_server field → provider client module.
-# D15 adds gmail, D16 adds github and slack.
+# D16 adds github and slack.
 _ROUTER = {
     "calendar": calendar,
+    "gmail": gmail,
 }
 
 
