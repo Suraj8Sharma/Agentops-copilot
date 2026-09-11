@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.mcp_clients import calendar, github, gmail
+from app.mcp_clients import calendar, github, gmail, slack
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,7 @@ _ROUTER = {
     "calendar": calendar,
     "gmail": gmail,
     "github": github,
+    "slack": slack,
 }
 
 

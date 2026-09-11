@@ -125,7 +125,7 @@ PROVIDER_CONFIG: dict[str, dict] = {
     "slack": {
         "authorize_url": "https://slack.com/oauth/v2/authorize",
         "token_url": "https://slack.com/api/oauth.v2.access",
-        "scopes": ["chat:write", "channels:read"],
+        "scopes": ["chat:write", "channels:read", "reactions:write"],
         "scope_delimiter": ",",
         "redirect_uri": "http://localhost:8000/oauth/slack/callback",
         "client_id_env": "SLACK_CLIENT_ID",
