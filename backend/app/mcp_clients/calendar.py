@@ -29,7 +29,9 @@ import time
 from typing import Any
 
 import httpx
+from cryptography.fernet import Fernet
 
+from app.core.config import settings
 from app.db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,7 @@ _TIMEOUT = 15.0
 
 
 def _fetch_user_token(user_id: str) -> str | None:
-    """Fetch the user's decrypted Google OAuth access token from oauth_connections."""
+    """Fetch and decrypt the user's Google OAuth access token from oauth_connections."""
     try:
         result = (
             supabase.table("oauth_connections")
@@ -63,10 +65,17 @@ def _fetch_user_token(user_id: str) -> str | None:
             .single()
             .execute()
         )
-        if result.data:
-            return result.data["access_token"]
-        logger.warning("calendar: no Google token found for user_id=%s", user_id)
-        return None
+        if not result.data:
+            logger.warning("calendar: no Google token found for user_id=%s", user_id)
+            return None
+
+        encrypted_token = result.data["access_token"]
+        try:
+            fernet = Fernet(settings.ENCRYPTION_KEY.encode())
+            return fernet.decrypt(encrypted_token.encode()).decode()
+        except Exception:
+            logger.debug("calendar: Fernet decrypt failed, using raw token for user_id=%s", user_id)
+            return encrypted_token
     except Exception:
         logger.error(
             "calendar: failed to fetch token for user_id=%s",

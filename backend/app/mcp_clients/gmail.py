@@ -30,7 +30,9 @@ from email.mime.text import MIMEText
 from typing import Any
 
 import httpx
+from cryptography.fernet import Fernet
 
+from app.core.config import settings
 from app.db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
@@ -67,7 +69,7 @@ _TIMEOUT = 15.0
 
 
 def _fetch_google_token(user_id: str) -> str | None:
-    """Fetch the user's decrypted Google OAuth access token from oauth_connections.
+    """Fetch and decrypt the user's Google OAuth access token from oauth_connections.
 
     Note: The callback stores Gmail tokens under provider='gmail' (not 'google'),
     since one Google consent yields two rows — 'google_calendar' and 'gmail'.
@@ -81,10 +83,17 @@ def _fetch_google_token(user_id: str) -> str | None:
             .single()
             .execute()
         )
-        if result.data:
-            return result.data["access_token"]
-        logger.warning("gmail: no Gmail token found for user_id=%s", user_id)
-        return None
+        if not result.data:
+            logger.warning("gmail: no Gmail token found for user_id=%s", user_id)
+            return None
+
+        encrypted_token = result.data["access_token"]
+        try:
+            fernet = Fernet(settings.ENCRYPTION_KEY.encode())
+            return fernet.decrypt(encrypted_token.encode()).decode()
+        except Exception:
+            logger.debug("gmail: Fernet decrypt failed, using raw token for user_id=%s", user_id)
+            return encrypted_token
     except Exception:
         logger.error(
             "gmail: failed to fetch token for user_id=%s",
