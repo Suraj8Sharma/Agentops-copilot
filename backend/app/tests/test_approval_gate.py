@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from app.risk.approval_gate import evaluate
 from app.risk.risk_rules import RiskRule
