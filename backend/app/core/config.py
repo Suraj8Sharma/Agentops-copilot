@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # Supabase JWT — required from D5 (placeholder today)
     # -------------------------------------------------------------------------
     SUPABASE_JWT_SECRET: str = ""
+    LANGGRAPH_CHECKPOINTER_DB_URI: str = ""
 
     # -------------------------------------------------------------------------
     # LLM APIs — required from D18 (placeholders today)

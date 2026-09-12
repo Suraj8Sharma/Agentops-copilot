@@ -171,8 +171,8 @@ def test_execute_node_runs_low_risk_calendar_tool():
 
 
 def test_execute_node_skips_high_risk_step():
-    """High-risk step (requires_approval=True) must not be executed."""
-    from app.agents.nodes import execute
+    """High-risk step (requires_approval=True) must route to approval_gate."""
+    from app.agents.nodes import route_step
 
     step = _high_risk_step()
     state = _make_state(
@@ -182,19 +182,8 @@ def test_execute_node_skips_high_risk_step():
         },
     )
 
-    mock_supabase = _make_supabase_mock()
-
-    with (
-        patch("app.agents.nodes.supabase", mock_supabase),
-        patch("app.mcp_clients.calendar.supabase", mock_supabase),
-        patch("httpx.post") as mock_post,
-    ):
-        result = execute(state)
-
-    # MCP server must NOT have been called
-    mock_post.assert_not_called()
-    # Step not in step_results (was skipped)
-    assert 0 not in result["step_results"]
+    next_node = route_step(state)
+    assert next_node == "approval_gate"
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +260,7 @@ def test_execute_skips_when_state_error_set():
         result = execute(state)
 
     mock_post.assert_not_called()
-    assert result["step_results"] == {}
+    assert result == {}
 
 
 # ---------------------------------------------------------------------------
@@ -376,11 +365,8 @@ def test_execute_retries_on_transient_error():
 
 # ---------------------------------------------------------------------------
 # D14 graph shape: four nodes run in order
-# ---------------------------------------------------------------------------
-
-
-def test_graph_runs_four_nodes_in_order():
-    """Graph calls intent_classify → plan → risk_tag → execute in order."""
+def test_graph_runs_nodes_in_order():
+    """Graph calls intent_classify → plan → risk_tag → route_step → execute in order."""
     call_order = []
 
     def mock_intent_classify(state):
@@ -406,17 +392,29 @@ def test_graph_runs_four_nodes_in_order():
 
     def mock_execute(state):
         call_order.append("execute")
-        return {"step_results": {}, "retries": {}, "current_step_index": 0}
+        return {"step_results": {0: "done"}, "retries": {0: 0}, "current_step_index": 1}
+
+    def mock_route_step(state):
+        call_order.append("route_step")
+        current = state.get("current_step_index", 0)
+        if current >= 1:
+            return "END"
+        return "execute"
+
+    from unittest.mock import patch
 
     with (
         patch("app.agents.graph.intent_classify", mock_intent_classify),
         patch("app.agents.graph.plan", mock_plan),
         patch("app.agents.graph.risk_tag", mock_risk_tag),
         patch("app.agents.graph.execute", mock_execute),
+        patch("app.agents.graph.route_step", mock_route_step),
     ):
+        from langgraph.checkpoint.memory import MemorySaver
+
         from app.agents.graph import build_graph
 
-        g = build_graph()
+        graph = build_graph(checkpointer=MemorySaver())
         initial: dict[str, Any] = {
             "task_id": TASK_ID,
             "user_id": USER_ID,
@@ -431,13 +429,18 @@ def test_graph_runs_four_nodes_in_order():
             "retries": {},
             "error": None,
         }
-        g.invoke(initial, config={"configurable": {"thread_id": TASK_ID}})
+        graph.invoke(initial, config={"configurable": {"thread_id": TASK_ID}})
 
-    assert call_order == ["intent_classify", "plan", "risk_tag", "execute"]
+    assert call_order == [
+        "intent_classify",
+        "plan",
+        "risk_tag",
+        "route_step",
+        "execute",
+        "route_step",
+    ]
 
 
-# ---------------------------------------------------------------------------
-# calendar client: missing token
 # ---------------------------------------------------------------------------
 
 

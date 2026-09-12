@@ -21,7 +21,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-from app.api.routers import auth, health, me, oauth, tasks
+from app.api.routers import approvals, auth, health, me, oauth, tasks
 from app.db.supabase_client import probe_connection
 
 logging.basicConfig(
@@ -34,27 +34,20 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Lifespan — startup / shutdown hooks
 # ---------------------------------------------------------------------------
+
+
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: ARG001
-    """FastAPI lifespan context manager.
-
-    Runs **before** the server starts accepting requests (startup) and again
-    **after** the last request is handled (shutdown).
-    """
-    # ---- Startup ------------------------------------------------------------
-    logger.info("AgentOps Copilot API starting up…")
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    logger.info("AgentOps Copilot API starting up.")
     probe_connection()
-    logger.info("Startup complete — server ready.")
+    from app.agents.runner import checkpointer_lifespan
 
-    yield  # server is live here
-
-    # ---- Shutdown -----------------------------------------------------------
+    async with checkpointer_lifespan():
+        logger.info("Startup complete - server ready.")
+        yield
     logger.info("AgentOps Copilot API shutting down.")
 
 
-# ---------------------------------------------------------------------------
-# App factory
-# ---------------------------------------------------------------------------
 app = FastAPI(
     title="AgentOps Copilot API",
     description=("Backend for AgentOps Copilot — AI-powered mobile DevOps companion."),
@@ -73,3 +66,4 @@ app.include_router(auth.router)
 app.include_router(me.router)
 app.include_router(tasks.router)
 app.include_router(oauth.router)
+app.include_router(approvals.router)

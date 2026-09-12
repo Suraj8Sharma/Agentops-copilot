@@ -258,8 +258,8 @@ def test_gmail_draft_email_success():
 
 # AC-8
 def test_gmail_send_respects_approval_gate():
-    """Execute node must skip gmail.send_message (high-risk) without approval."""
-    from app.agents.nodes import execute
+    """High-risk steps like gmail.send_message must route to approval_gate."""
+    from app.agents.nodes import route_step
     from app.agents.state import Step
 
     step = Step(
@@ -273,25 +273,9 @@ def test_gmail_send_respects_approval_gate():
             0: {"risk_tier": "high", "requires_approval": True, "rationale": "irreversible"}
         },
     )
-    mock_sb = MagicMock()
 
-    def table_se(name):
-        t = MagicMock()
-        u = MagicMock()
-        u.eq.return_value = MagicMock(execute=MagicMock(return_value=MagicMock(data=[])))
-        t.update.return_value = u
-        t.insert.return_value = MagicMock(execute=MagicMock(return_value=MagicMock(data=[])))
-        return t
-
-    mock_sb.table.side_effect = table_se
-    with (
-        patch("app.agents.nodes.supabase", mock_sb),
-        patch("app.mcp_clients.gmail.supabase", mock_sb),
-        patch("httpx.post") as mp,
-    ):
-        result = execute(state)
-    mp.assert_not_called()
-    assert 0 not in result["step_results"]
+    next_node = route_step(state)
+    assert next_node == "approval_gate"
 
 
 # AC-9

@@ -124,14 +124,21 @@ def test_graph_runs_three_nodes_in_order():
         decision = {"risk_tier": "low", "requires_approval": False, "rationale": "ok"}
         return {"risk_flags": {0: decision}}
 
+    def mock_route_step(state):
+        call_order.append("route_step")
+        return "END"
+
     with (
         patch("app.agents.graph.intent_classify", mock_intent_classify),
         patch("app.agents.graph.plan", mock_plan),
         patch("app.agents.graph.risk_tag", mock_risk_tag),
+        patch("app.agents.graph.route_step", mock_route_step),
     ):
+        from langgraph.checkpoint.memory import MemorySaver
+
         from app.agents.graph import build_graph
 
-        g = build_graph()
+        g = build_graph(checkpointer=MemorySaver())
         from app.agents.state import AgentState
 
         state = AgentState(
@@ -147,7 +154,7 @@ def test_graph_runs_three_nodes_in_order():
         )
         g.invoke(state, config={"configurable": {"thread_id": TASK_ID}})
 
-    assert call_order == ["intent_classify", "plan", "risk_tag"], (
+    assert call_order == ["intent_classify", "plan", "risk_tag", "route_step"], (
         f"Expected nodes in order, got: {call_order}"
     )
 
