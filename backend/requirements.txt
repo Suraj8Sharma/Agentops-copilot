@@ -10,3 +10,5 @@ httpx<0.28
 ruff
 langgraph-checkpoint-postgres
 psycopg[binary]
+groq
+google-genai
