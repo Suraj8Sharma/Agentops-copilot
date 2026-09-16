@@ -154,8 +154,8 @@ async def test_route_llm_call_both_fail():
                 # Verify both errors are in the exception message
                 assert "Both Groq and Gemini failed" in str(exc_info.value)
 
-                # Verify two log calls (both failures)
-                assert mock_log.call_count == 2
+                # Verify two log calls per attempt (both failures), 4 attempts total -> 8 calls
+                assert mock_log.call_count == 8
 
                 first_call = mock_log.call_args_list[0]
                 assert first_call.kwargs["success"] is False

@@ -1,5 +1,8 @@
+import asyncio
 import json
 import logging
+
+from app.db.supabase_client import supabase
 
 from .gemini_client import call_gemini
 from .groq_client import call_groq
@@ -25,27 +28,26 @@ def log_llm_usage(
     success: bool,
 ) -> None:
     """
-    Log LLM usage to structured local log.
-
-    # TODO(D21): Replace this function body with a real insert into the
-    # llm_usage_logs table once that table exists. Use the exact column names
-    # from Section 7, Group F of the manual. Call sites in router.py should
-    # not need to change on D21 — only this function's body.
+    Log LLM usage to the structured local log and the llm_usage_logs DB table.
     """
-    _llm_logger.info(
-        json.dumps(
-            {
-                "provider": provider,
-                "model": model,
-                "request_type": request_type,
-                "tokens_in": tokens_in,
-                "tokens_out": tokens_out,
-                "latency_ms": latency_ms,
-                "rate_limit_hit": rate_limit_hit,
-                "success": success,
-            }
-        )
-    )
+    payload = {
+        "provider": provider,
+        "model": model,
+        "request_type": request_type,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "latency_ms": latency_ms,
+        "rate_limit_hit": rate_limit_hit,
+    }
+
+    # Still write to local log for debugging
+    _llm_logger.info(json.dumps({**payload, "success": success}))
+
+    # Real DB insert as per D21
+    try:
+        supabase.table("llm_usage_logs").insert(payload).execute()
+    except Exception as e:
+        _llm_logger.error(f"Failed to insert into llm_usage_logs: {str(e)}")
 
 
 async def route_llm_call(
@@ -61,6 +63,9 @@ async def route_llm_call(
     Any other Groq exception propagates immediately without attempting Gemini.
     Every attempt (success or failure) is logged.
 
+    Includes an exponential backoff retry loop (up to 3 retries) if both
+    providers fail due to rate limits or server errors.
+
     Args:
         prompt: The prompt to send to the LLM
         request_type: Type of request (e.g. "planning", "routing",
@@ -72,66 +77,83 @@ async def route_llm_call(
         LLMResponse from whichever provider succeeded
 
     Raises:
-        LLMRouterExhaustedError: When both Groq and Gemini fail
+        LLMRouterExhaustedError: When both Groq and Gemini fail after retries
         Other exceptions: Propagate immediately from Groq if not rate-limit/server-error
     """
+    max_retries = 3
+    base_delay = 1.0
     groq_error = None
+    gemini_error = None
 
-    # Step 1: Try Groq
-    try:
-        response = await call_groq(prompt, model=groq_model)
-        log_llm_usage(
-            provider=response.provider.value,
-            model=response.model,
-            request_type=request_type,
-            tokens_in=response.tokens_in,
-            tokens_out=response.tokens_out,
-            latency_ms=response.latency_ms,
-            rate_limit_hit=response.rate_limited,
-            success=True,
-        )
-        return response
-    except (LLMRateLimitError, LLMServerError) as e:
-        # Log the failure and prepare for fallback
-        groq_error = e
-        log_llm_usage(
-            provider=LLMProvider.GROQ.value,
-            model=groq_model or "unknown",
-            request_type=request_type,
-            tokens_in=0,
-            tokens_out=0,
-            latency_ms=0,
-            rate_limit_hit=isinstance(e, LLMRateLimitError),
-            success=False,
-        )
+    for attempt in range(max_retries + 1):
+        # Step 1: Try Groq
+        try:
+            response = await call_groq(prompt, model=groq_model)
+            log_llm_usage(
+                provider=response.provider.value,
+                model=response.model,
+                request_type=request_type,
+                tokens_in=response.tokens_in,
+                tokens_out=response.tokens_out,
+                latency_ms=response.latency_ms,
+                rate_limit_hit=response.rate_limited,
+                success=True,
+            )
+            return response
+        except (LLMRateLimitError, LLMServerError) as e:
+            # Log the failure and prepare for fallback
+            groq_error = e
+            log_llm_usage(
+                provider=LLMProvider.GROQ.value,
+                model=groq_model or "unknown",
+                request_type=request_type,
+                tokens_in=0,
+                tokens_out=0,
+                latency_ms=0,
+                rate_limit_hit=isinstance(e, LLMRateLimitError),
+                success=False,
+            )
 
-    # Step 2: Fallback to Gemini
-    try:
-        response = await call_gemini(prompt, model=gemini_model)
-        log_llm_usage(
-            provider=response.provider.value,
-            model=response.model,
-            request_type=request_type,
-            tokens_in=response.tokens_in,
-            tokens_out=response.tokens_out,
-            latency_ms=response.latency_ms,
-            rate_limit_hit=response.rate_limited,
-            success=True,
-        )
-        return response
-    except (LLMRateLimitError, LLMServerError) as e:
-        # Both providers failed
-        log_llm_usage(
-            provider=LLMProvider.GEMINI.value,
-            model=gemini_model or "unknown",
-            request_type=request_type,
-            tokens_in=0,
-            tokens_out=0,
-            latency_ms=0,
-            rate_limit_hit=isinstance(e, LLMRateLimitError),
-            success=False,
-        )
+        # Step 2: Fallback to Gemini
+        try:
+            response = await call_gemini(prompt, model=gemini_model)
+            log_llm_usage(
+                provider=response.provider.value,
+                model=response.model,
+                request_type=request_type,
+                tokens_in=response.tokens_in,
+                tokens_out=response.tokens_out,
+                latency_ms=response.latency_ms,
+                rate_limit_hit=response.rate_limited,
+                success=True,
+            )
+            return response
+        except (LLMRateLimitError, LLMServerError) as e:
+            gemini_error = e
+            # Both providers failed
+            log_llm_usage(
+                provider=LLMProvider.GEMINI.value,
+                model=gemini_model or "unknown",
+                request_type=request_type,
+                tokens_in=0,
+                tokens_out=0,
+                latency_ms=0,
+                rate_limit_hit=isinstance(e, LLMRateLimitError),
+                success=False,
+            )
 
-        # Raise exhausted error with both underlying errors
-        error_msg = f"Both Groq and Gemini failed. Groq: {str(groq_error)}. Gemini: {str(e)}"
-        raise LLMRouterExhaustedError(error_msg) from e
+        # If we reach here, both failed. Apply exponential backoff and retry, or raise if exhausted
+        if attempt < max_retries:
+            delay = base_delay * (2**attempt)
+            _llm_logger.warning(
+                f"Both Groq and Gemini failed (attempt {attempt + 1}/{max_retries + 1}). "
+                f"Retrying in {delay} seconds..."
+            )
+            await asyncio.sleep(delay)
+        else:
+            # Raise exhausted error with both underlying errors
+            error_msg = (
+                f"Both Groq and Gemini failed after {max_retries + 1} attempts. "
+                f"Groq: {str(groq_error)}. Gemini: {str(gemini_error)}"
+            )
+            raise LLMRouterExhaustedError(error_msg) from gemini_error
