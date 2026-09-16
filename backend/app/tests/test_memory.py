@@ -83,6 +83,7 @@ def _make_supabase_delete_mock():
 # Test 1 — Store and retrieve (all external calls mocked)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_store_and_retrieve_memory():
     """
@@ -142,6 +143,7 @@ async def test_store_and_retrieve_memory():
 # Test 2 — Preference upsert idempotency (Supabase mocked)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_preference_upsert_no_duplicates():
     """
@@ -156,9 +158,7 @@ async def test_preference_upsert_no_duplicates():
     upsert_mock = _make_supabase_upsert_mock()
 
     # Simulate DB returning the latest value after two upserts
-    select_mock = _make_supabase_select_mock(rows=[
-        {"preference_key": key, "preference_value": 45}
-    ])
+    select_mock = _make_supabase_select_mock(rows=[{"preference_key": key, "preference_value": 45}])
 
     with patch("app.memory.preferences.supabase", upsert_mock):
         await upsert_preference(
@@ -191,6 +191,7 @@ async def test_preference_upsert_no_duplicates():
 # Test 3 — Invalid source raises ValueError before hitting the DB
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_upsert_preference_invalid_source_raises():
     """Guard: Python-side validation fires before any DB call is made."""
@@ -207,6 +208,7 @@ async def test_upsert_preference_invalid_source_raises():
 # ---------------------------------------------------------------------------
 # Test 4 — retrieve returns empty list for unknown user (Supabase mocked)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_retrieve_returns_empty_for_unknown_user():

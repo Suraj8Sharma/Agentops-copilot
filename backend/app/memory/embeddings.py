@@ -93,9 +93,7 @@ async def store_memory(
     """
     valid_categories = {"preference", "outcome", "correction"}
     if category not in valid_categories:
-        raise ValueError(
-            f"Invalid category '{category}'. Must be one of: {valid_categories}"
-        )
+        raise ValueError(f"Invalid category '{category}'. Must be one of: {valid_categories}")
 
     embedding = await generate_embedding(content_text)
 
