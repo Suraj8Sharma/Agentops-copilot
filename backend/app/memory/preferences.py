@@ -84,13 +84,9 @@ async def upsert_preference(
         Exception:  DB errors propagate unchanged.
     """
     if source not in VALID_SOURCES:
-        raise ValueError(
-            f"Invalid source '{source}'. Must be one of: {VALID_SOURCES}"
-        )
+        raise ValueError(f"Invalid source '{source}'. Must be one of: {VALID_SOURCES}")
     if not (0.00 <= confidence <= 1.00):
-        raise ValueError(
-            f"confidence must be between 0.00 and 1.00, got {confidence}"
-        )
+        raise ValueError(f"confidence must be between 0.00 and 1.00, got {confidence}")
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -126,9 +122,9 @@ async def delete_preference(user_id: str, preference_key: str) -> None:
         user_id:        UUID of the user.
         preference_key: Key to remove.
     """
-    supabase.table("user_preferences").delete().eq(
-        "user_id", user_id
-    ).eq("preference_key", preference_key).execute()
+    supabase.table("user_preferences").delete().eq("user_id", user_id).eq(
+        "preference_key", preference_key
+    ).execute()
 
     logger.info(
         "Deleted preference | user_id=%s key=%s",

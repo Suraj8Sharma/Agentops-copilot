@@ -15,7 +15,7 @@ def mock_lookup():
                 mcp_server=mcp_server,
                 risk_tier="low",
                 requires_approval=False,
-                rationale="ok"
+                rationale="ok",
             )
         elif action_type == "slack.post_message_channel":
             return RiskRule(
@@ -23,9 +23,10 @@ def mock_lookup():
                 mcp_server=mcp_server,
                 risk_tier="high",
                 requires_approval=True,
-                rationale="destructive"
+                rationale="destructive",
             )
         return None
+
     with patch("app.risk.approval_gate.lookup", side_effect=_lookup):
         yield
 

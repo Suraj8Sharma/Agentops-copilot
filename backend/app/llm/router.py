@@ -26,7 +26,7 @@ def log_llm_usage(
 ) -> None:
     """
     Log LLM usage to structured local log.
-    
+
     # TODO(D21): Replace this function body with a real insert into the
     # llm_usage_logs table once that table exists. Use the exact column names
     # from Section 7, Group F of the manual. Call sites in router.py should
@@ -56,27 +56,27 @@ async def route_llm_call(
 ) -> LLMResponse:
     """
     Route an LLM call to Groq with automatic fallback to Gemini.
-    
+
     Tries Groq first. On rate-limit (429) or server error (5xx), falls back to Gemini.
     Any other Groq exception propagates immediately without attempting Gemini.
     Every attempt (success or failure) is logged.
-    
+
     Args:
         prompt: The prompt to send to the LLM
         request_type: Type of request (e.g. "planning", "routing",
             "risk_explanation", "banner", "memory_extraction")
         groq_model: Groq model name (optional, falls back to env var)
         gemini_model: Gemini model name (optional, falls back to env var)
-    
+
     Returns:
         LLMResponse from whichever provider succeeded
-    
+
     Raises:
         LLMRouterExhaustedError: When both Groq and Gemini fail
         Other exceptions: Propagate immediately from Groq if not rate-limit/server-error
     """
     groq_error = None
-    
+
     # Step 1: Try Groq
     try:
         response = await call_groq(prompt, model=groq_model)
@@ -104,7 +104,7 @@ async def route_llm_call(
             rate_limit_hit=isinstance(e, LLMRateLimitError),
             success=False,
         )
-    
+
     # Step 2: Fallback to Gemini
     try:
         response = await call_gemini(prompt, model=gemini_model)
@@ -131,7 +131,7 @@ async def route_llm_call(
             rate_limit_hit=isinstance(e, LLMRateLimitError),
             success=False,
         )
-        
+
         # Raise exhausted error with both underlying errors
         error_msg = f"Both Groq and Gemini failed. Groq: {str(groq_error)}. Gemini: {str(e)}"
         raise LLMRouterExhaustedError(error_msg) from e

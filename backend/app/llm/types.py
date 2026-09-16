@@ -20,19 +20,23 @@ class LLMResponse:
 
 class LLMProviderError(Exception):
     """Base class for all provider-level failures."""
+
     pass
 
 
 class LLMRateLimitError(LLMProviderError):
     """Raised on a 429 from either provider."""
+
     pass
 
 
 class LLMServerError(LLMProviderError):
     """Raised on a 5xx from either provider."""
+
     pass
 
 
 class LLMRouterExhaustedError(Exception):
     """Raised when both Groq and Gemini have failed for the same request."""
+
     pass
