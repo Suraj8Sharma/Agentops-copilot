@@ -142,6 +142,40 @@ def _already_sent(plan_id: str, step_index: int) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# Execution log helper
+# ---------------------------------------------------------------------------
+
+
+def _log_event_gmail(
+    task_id: str,
+    event_type: str,
+    payload: dict[str, Any],
+    step_id: str | None = None,
+    latency_ms: int | None = None,
+) -> None:
+    """Write one row to execution_logs for a Gmail MCP event (best-effort)."""
+    try:
+        row: dict[str, Any] = {
+            "task_id": task_id,
+            "agent_name": "mcp_gmail",
+            "event_type": event_type,
+            "payload": payload,
+        }
+        if step_id is not None:
+            row["step_id"] = step_id
+        if latency_ms is not None:
+            row["latency_ms"] = latency_ms
+        supabase.table("execution_logs").insert(row).execute()
+    except Exception:
+        logger.warning(
+            "execution_logs write failed [mcp_gmail task_id=%s event_type=%s]",
+            task_id,
+            event_type,
+            exc_info=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Internal: Gmail MCP path
 # ---------------------------------------------------------------------------
 
@@ -151,6 +185,7 @@ def _call_gmail_mcp(
     input_params: dict[str, Any],
     user_id: str,
     idempotency_key: str,
+    task_id: str = "unknown",
 ) -> dict[str, Any]:
     """Call a Gmail read/draft tool via the official Gmail MCP remote server."""
     t0 = time.monotonic()
@@ -191,46 +226,59 @@ def _call_gmail_mcp(
         "X-Idempotency-Key": idempotency_key,
     }
 
-    # 4. Call the MCP server
+    # 4. Log tool_called before any external effect
+    _log_event_gmail(
+        task_id=task_id,
+        event_type="tool_called",
+        payload={"tool_name": tool_name, "mcp_server": "gmail", "input_params": input_params},
+    )
+
+    # 5. Call the MCP server
     try:
         response = httpx.post(GMAIL_MCP_URL, json=payload, headers=headers, timeout=_TIMEOUT)
     except httpx.TimeoutException:
+        latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("gmail: timeout calling MCP server [tool=%s user=%s]", tool_name, user_id)
-        return {
-            "status": "error",
-            "output": None,
-            "error": "timeout",
-            "latency_ms": int((time.monotonic() - t0) * 1000),
-        }
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "TIMEOUT", "message": "timeout"},
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": "timeout", "latency_ms": latency_ms}
     except httpx.RequestError as exc:
+        latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("gmail: network error [tool=%s]: %s", tool_name, exc)
-        return {
-            "status": "error",
-            "output": None,
-            "error": f"network error: {exc}",
-            "latency_ms": int((time.monotonic() - t0) * 1000),
-        }
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "NETWORK_ERROR", "message": str(exc)},
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": f"network error: {exc}", "latency_ms": latency_ms}
 
     latency_ms = int((time.monotonic() - t0) * 1000)
 
-    # 5. Handle HTTP-level errors
+    # 6. Handle HTTP-level errors
     if response.status_code == 429:
         logger.warning("gmail: rate limited [tool=%s user=%s]", tool_name, user_id)
-        return {
-            "status": "rate_limited",
-            "output": None,
-            "error": "rate_limited",
-            "latency_ms": latency_ms,
-        }
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "RATE_LIMITED", "message": "rate limited"},
+            latency_ms=latency_ms,
+        )
+        return {"status": "rate_limited", "output": None, "error": "rate_limited", "latency_ms": latency_ms}
 
     if response.status_code == 401:
         logger.warning("gmail: 401 unauthorized [tool=%s user=%s]", tool_name, user_id)
-        return {
-            "status": "error",
-            "output": None,
-            "error": "unauthorized — token expired or revoked",
-            "latency_ms": latency_ms,
-        }
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "AUTH_EXPIRED", "message": "unauthorized — token expired or revoked"},
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": "unauthorized — token expired or revoked", "latency_ms": latency_ms}
 
     if not response.is_success:
         logger.error(
@@ -239,24 +287,26 @@ def _call_gmail_mcp(
             tool_name,
             user_id,
         )
-        return {
-            "status": "error",
-            "output": None,
-            "error": f"MCP server returned HTTP {response.status_code}",
-            "latency_ms": latency_ms,
-        }
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "PROVIDER_ERROR", "message": f"MCP server returned HTTP {response.status_code}"},
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": f"MCP server returned HTTP {response.status_code}", "latency_ms": latency_ms}
 
-    # 6. Parse JSON-RPC response
+    # 7. Parse JSON-RPC response
     try:
         body = response.json()
     except Exception:
         logger.error("gmail: non-JSON response from MCP server [tool=%s]", tool_name)
-        return {
-            "status": "error",
-            "output": None,
-            "error": "invalid JSON from MCP server",
-            "latency_ms": latency_ms,
-        }
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "PROVIDER_ERROR", "message": "invalid JSON from MCP server"},
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": "invalid JSON from MCP server", "latency_ms": latency_ms}
 
     if "error" in body:
         rpc_error = body["error"]
@@ -266,15 +316,22 @@ def _call_gmail_mcp(
             rpc_error.get("code"),
             rpc_error.get("message"),
         )
-        return {
-            "status": "error",
-            "output": None,
-            "error": rpc_error.get("message", "unknown MCP error"),
-            "latency_ms": latency_ms,
-        }
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": str(rpc_error.get("code")), "message": rpc_error.get("message", "unknown MCP error")},
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": rpc_error.get("message", "unknown MCP error"), "latency_ms": latency_ms}
 
     result = body.get("result", {})
     logger.info("gmail: success [tool=%s user=%s latency=%dms]", tool_name, user_id, latency_ms)
+    _log_event_gmail(
+        task_id=task_id,
+        event_type="tool_result",
+        payload={"tool_name": tool_name, "mcp_server": "gmail", "status": "success", "output": result},
+        latency_ms=latency_ms,
+    )
     return {"status": "success", "output": result, "error": None, "latency_ms": latency_ms}
 
 
@@ -283,10 +340,12 @@ def _call_gmail_mcp(
 # ---------------------------------------------------------------------------
 
 
+
 def _call_gmail_send(
     input_params: dict[str, Any],
     user_id: str,
     idempotency_key: str,
+    task_id: str = "unknown",
 ) -> dict[str, Any]:
     """Send an email via the Gmail REST API using the user's own OAuth token.
 
@@ -351,7 +410,14 @@ def _call_gmail_send(
     raw_bytes = msg.as_bytes()
     raw_b64 = base64.urlsafe_b64encode(raw_bytes).decode("ascii")
 
-    # 4. POST to the Gmail REST API
+    # 4. Log tool_called before any external effect
+    _log_event_gmail(
+        task_id=task_id,
+        event_type="tool_called",
+        payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "to": to_str, "subject": input_params.get("subject", "")},
+    )
+
+    # 5. POST to the Gmail REST API
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -364,27 +430,37 @@ def _call_gmail_send(
             timeout=_TIMEOUT,
         )
     except httpx.TimeoutException:
+        latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("gmail: send timeout [user=%s]", user_id)
-        return {
-            "status": "error",
-            "output": None,
-            "error": "timeout",
-            "latency_ms": int((time.monotonic() - t0) * 1000),
-        }
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "TIMEOUT", "message": "timeout"},
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": "timeout", "latency_ms": latency_ms}
     except httpx.RequestError as exc:
+        latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("gmail: send network error: %s", exc)
-        return {
-            "status": "error",
-            "output": None,
-            "error": f"network error: {exc}",
-            "latency_ms": int((time.monotonic() - t0) * 1000),
-        }
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "NETWORK_ERROR", "message": str(exc)},
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": f"network error: {exc}", "latency_ms": latency_ms}
 
     latency_ms = int((time.monotonic() - t0) * 1000)
 
-    # 5. Handle response
+    # 6. Handle response
     if response.status_code == 429:
         logger.warning("gmail: send rate limited [user=%s]", user_id)
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "RATE_LIMITED", "message": "rate limited"},
+            latency_ms=latency_ms,
+        )
         return {
             "status": "rate_limited",
             "output": None,
@@ -394,6 +470,12 @@ def _call_gmail_send(
 
     if response.status_code == 401:
         logger.warning("gmail: send 401 unauthorized [user=%s]", user_id)
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "AUTH_EXPIRED", "message": "unauthorized — token expired or revoked"},
+            latency_ms=latency_ms,
+        )
         return {
             "status": "error",
             "output": None,
@@ -403,6 +485,12 @@ def _call_gmail_send(
 
     if response.status_code == 403:
         logger.warning("gmail: send 403 insufficient scope [user=%s]", user_id)
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "INSUFFICIENT_SCOPE", "message": "insufficient scope — user must reconnect Google with mail-send permission"},
+            latency_ms=latency_ms,
+        )
         return {
             "status": "error",
             "output": None,
@@ -416,6 +504,12 @@ def _call_gmail_send(
         except Exception:
             detail = ""
         logger.error("gmail: send HTTP %d [user=%s] %s", response.status_code, user_id, detail)
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "PROVIDER_ERROR", "message": f"Gmail API returned HTTP {response.status_code}: {detail}".strip(": ")},
+            latency_ms=latency_ms,
+        )
         return {
             "status": "error",
             "output": None,
@@ -435,6 +529,12 @@ def _call_gmail_send(
         output.get("id"),
         latency_ms,
     )
+    _log_event_gmail(
+        task_id=task_id,
+        event_type="tool_result",
+        payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "status": "success", "output": output},
+        latency_ms=latency_ms,
+    )
     return {"status": "success", "output": output, "error": None, "latency_ms": latency_ms}
 
 
@@ -448,6 +548,7 @@ def call(
     input_params: dict[str, Any],
     user_id: str,
     idempotency_key: str,
+    task_id: str = "unknown",
 ) -> dict[str, Any]:
     """Route a Gmail tool call to the correct integration.
 
@@ -456,6 +557,7 @@ def call(
         input_params:     Tool arguments from the plan step.
         user_id:          UUID of the acting user.
         idempotency_key:  ``plan_id:step_index`` for deduplication.
+        task_id:          UUID of the task execution.
 
     Returns:
         Standard AgentOps MCP envelope::
@@ -468,10 +570,10 @@ def call(
             }
     """
     if tool_name in _SEND_TOOLS:
-        return _call_gmail_send(input_params, user_id, idempotency_key)
+        return _call_gmail_send(input_params, user_id, idempotency_key, task_id=task_id)
 
     if tool_name in _MCP_TOOL_MAP:
-        return _call_gmail_mcp(tool_name, input_params, user_id, idempotency_key)
+        return _call_gmail_mcp(tool_name, input_params, user_id, idempotency_key, task_id=task_id)
 
     logger.error("gmail: unknown tool_name=%s", tool_name)
     return {

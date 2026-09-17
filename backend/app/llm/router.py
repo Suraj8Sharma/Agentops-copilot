@@ -2,8 +2,6 @@ import asyncio
 import json
 import logging
 
-from app.db.supabase_client import supabase
-
 from .gemini_client import call_gemini
 from .groq_client import call_groq
 from .types import (
@@ -28,8 +26,10 @@ def log_llm_usage(
     success: bool,
 ) -> None:
     """
-    Log LLM usage to the structured local log and the llm_usage_logs DB table.
+    Log LLM usage to structured local log and the remote Supabase database (D21).
     """
+    from app.db.supabase_client import supabase_admin
+
     payload = {
         "provider": provider,
         "model": model,
@@ -40,14 +40,12 @@ def log_llm_usage(
         "rate_limit_hit": rate_limit_hit,
     }
 
-    # Still write to local log for debugging
     _llm_logger.info(json.dumps({**payload, "success": success}))
 
-    # Real DB insert as per D21
     try:
-        supabase.table("llm_usage_logs").insert(payload).execute()
-    except Exception as e:
-        _llm_logger.error(f"Failed to insert into llm_usage_logs: {str(e)}")
+        supabase_admin.table("llm_usage_logs").insert(payload).execute()
+    except Exception:
+        _llm_logger.error("Failed to write to llm_usage_logs in Supabase", exc_info=True)
 
 
 async def route_llm_call(

@@ -27,6 +27,11 @@ supabase: Client = create_client(
     settings.SUPABASE_SERVICE_ROLE_KEY,
 )
 
+supabase_admin: Client = create_client(
+    settings.SUPABASE_URL,
+    settings.SUPABASE_SERVICE_ROLE_KEY,
+)
+
 
 def probe_connection() -> None:
     """Lightweight startup connectivity check.

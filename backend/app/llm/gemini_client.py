@@ -1,4 +1,3 @@
-import os
 import time
 
 from google import genai
@@ -29,12 +28,14 @@ async def call_gemini(
         LLMServerError: On HTTP 5xx
         Other exceptions propagate unchanged
     """
-    if model is None:
-        model = os.environ.get("GEMINI_MODEL_DEFAULT", "gemini-3.7-flash")
+    from app.core.config import settings
 
-    api_key = os.environ.get("GEMINI_API_KEY")
+    if model is None:
+        model = getattr(settings, "GEMINI_MODEL_DEFAULT", "gemini-3.7-flash")
+
+    api_key = settings.GEMINI_API_KEY
     if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable is not set")
+        raise ValueError("GEMINI_API_KEY configuration is missing")
 
     client = genai.Client(api_key=api_key)
 
