@@ -153,23 +153,23 @@ async def intent_classify(state: AgentState) -> dict[str, Any]:
         valid_intents = list(_STUB_PLANS.keys())
         prompt = (
             f"You are the intent classification module of an AI agent.\n"
-            f"Classify the user's request into EXACTLY ONE of the following intents: {valid_intents}\n"
+            f"Classify the user's request into EXACTLY ONE of the following intents: {valid_intents}\n"  # noqa: E501
             f"If the request does not clearly match any of these, output: unclassified\n"
-            f"Respond with ONLY the raw intent string, nothing else. No markdown, no explanation.\n\n"
+            f"Respond with ONLY the raw intent string, nothing else. No markdown, no explanation.\n\n"  # noqa: E501
             f"User Request: {raw}"
         )
         
         try:
             llm_resp = await route_llm_call(prompt, request_type="routing")
             # Clean up response: lowercased, stripped, remove punctuation
-            intent_out = llm_resp.text.strip().lower().replace("`", "").replace('"', "").replace("'", "")
+            intent_out = llm_resp.text.strip().lower().replace("`", "").replace('"', "").replace("'", "")  # noqa: E501
             if intent_out in valid_intents:
                 intent = intent_out
             else:
-                logger.warning("intent_classify: LLM returned invalid intent %r, defaulting to unclassified", intent_out)
+                logger.warning("intent_classify: LLM returned invalid intent %r, defaulting to unclassified", intent_out)  # noqa: E501
                 intent = "unclassified"
         except Exception:
-            logger.error("intent_classify: LLM call failed, defaulting to unclassified", exc_info=True)
+            logger.error("intent_classify: LLM call failed, defaulting to unclassified", exc_info=True)  # noqa: E501
             intent = "unclassified"
 
     latency_ms = int((time.monotonic() - t0) * 1000)
@@ -223,7 +223,7 @@ async def plan(state: AgentState) -> dict[str, Any]:
 
     # --- DB write 1: UPDATE tasks.status → "planning" ---
     try:
-        supabase_admin.table("tasks").update({"status": "planning"}).eq("id", state["task_id"]).execute()
+        supabase_admin.table("tasks").update({"status": "planning"}).eq("id", state["task_id"]).execute()  # noqa: E501
     except Exception:
         logger.warning(
             "Failed to set task status=planning [task_id=%s]",
@@ -241,9 +241,9 @@ async def plan(state: AgentState) -> dict[str, Any]:
         f"The user's raw request is '{raw}'.\n\n"
         f"Here is the JSON template for the steps required for this intent:\n"
         f"{json.dumps(template_json, indent=2)}\n\n"
-        f"Your task is to fill in the [placeholder] and TBD values with actual parameters extracted from the user's request. "
-        f"For dates or times, format them appropriately or leave them as TBD if completely unspecified. "
-        f"Output ONLY a raw JSON array matching this structure. Do NOT include markdown blocks like ```json ... ```, just the array itself."
+        f"Your task is to fill in the [placeholder] and TBD values with actual parameters extracted from the user's request. "  # noqa: E501
+        f"For dates or times, format them appropriately or leave them as TBD if completely unspecified. "  # noqa: E501
+        f"Output ONLY a raw JSON array matching this structure. Do NOT include markdown blocks like ```json ... ```, just the array itself."  # noqa: E501
     )
 
     plan_steps: list[Step] = []
@@ -273,7 +273,7 @@ async def plan(state: AgentState) -> dict[str, Any]:
                 )
             )
     except Exception:
-        logger.error("plan: LLM generation failed or returned invalid JSON, falling back to template", exc_info=True)
+        logger.error("plan: LLM generation failed or returned invalid JSON, falling back to template", exc_info=True)  # noqa: E501
         # Fall back to template plan if LLM goes crazy
         plan_steps = template_steps
 
@@ -407,7 +407,7 @@ def risk_tag(state: AgentState) -> dict[str, Any]:
     # --- DB write: UPDATE task_plans.status → "active" ---
     if plan_id:
         try:
-            supabase_admin.table("task_plans").update({"status": "active"}).eq("id", plan_id).execute()
+            supabase_admin.table("task_plans").update({"status": "active"}).eq("id", plan_id).execute()  # noqa: E501
         except Exception:
             logger.warning(
                 "risk_tag: failed to set task_plans active [plan_id=%s]",

@@ -8,7 +8,7 @@ Test map vs. spec acceptance criteria (d22-execution-logs-wire.md §7):
     test_calendar_tool_called_writes_log              -> tool_called row on happy path
     test_calendar_tool_result_writes_log              -> tool_result row on success
     test_calendar_error_writes_log                    -> error row on 401
-    test_calendar_log_failure_does_not_crash_call     -> best-effort: log exception doesn't propagate
+    test_calendar_log_failure_does_not_crash_call     -> log exception doesn't propagate
 
   Gmail (MCP path)
     test_gmail_tool_called_writes_log                 -> tool_called row on happy path
@@ -122,7 +122,7 @@ def _json_response(status_code: int = 200, body: dict | None = None) -> MagicMoc
     return resp
 
 
-def _sse_response(status_code: int = 200, result: dict | None = None, error: dict | None = None) -> MagicMock:
+def _sse_response(status_code: int = 200, result: dict | None = None, error: dict | None = None) -> MagicMock:  # noqa: E501
     """SSE-style httpx response mock (used by github)."""
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code
@@ -519,7 +519,7 @@ class TestGitHubExecutionLogs:
         with (
             patch("app.mcp_clients.github.supabase", mock_supabase),
             patch("app.mcp_clients.github._session_cache", {}),
-            patch("httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]),
+            patch("httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]),  # noqa: E501
         ):
             from app.mcp_clients import github
             github.call(
@@ -541,7 +541,7 @@ class TestGitHubExecutionLogs:
         with (
             patch("app.mcp_clients.github.supabase", mock_supabase),
             patch("app.mcp_clients.github._session_cache", {}),
-            patch("httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]),
+            patch("httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]),  # noqa: E501
         ):
             from app.mcp_clients import github
             result = github.call(
@@ -595,7 +595,7 @@ class TestGitHubExecutionLogs:
         with (
             patch("app.mcp_clients.github.supabase", mock_supabase),
             patch("app.mcp_clients.github._session_cache", {}),
-            patch("httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]),
+            patch("httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]),  # noqa: E501
         ):
             from app.mcp_clients import github
             result = github.call(
@@ -633,7 +633,7 @@ def _slack_success_resp() -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = 200
     resp.is_success = True
-    resp.json.return_value = {"jsonrpc": "2.0", "id": IDEMPOTENCY_KEY, "result": {"ok": True, "ts": "1234.5678"}}
+    resp.json.return_value = {"jsonrpc": "2.0", "id": IDEMPOTENCY_KEY, "result": {"ok": True, "ts": "1234.5678"}}  # noqa: E501
     return resp
 
 
@@ -742,7 +742,7 @@ class TestCallToolTaskIdThreading:
 
     def test_call_tool_passes_task_id_to_calendar(self):
         mock_cal = MagicMock()
-        mock_cal.call.return_value = {"status": "success", "output": {}, "error": None, "latency_ms": 5}
+        mock_cal.call.return_value = {"status": "success", "output": {}, "error": None, "latency_ms": 5}  # noqa: E501
 
         import app.mcp_clients as router_mod
         with patch.dict(router_mod._ROUTER, {"calendar": mock_cal}):
@@ -765,7 +765,7 @@ class TestCallToolTaskIdThreading:
 
     def test_call_tool_passes_task_id_to_gmail(self):
         mock_gmail = MagicMock()
-        mock_gmail.call.return_value = {"status": "success", "output": {}, "error": None, "latency_ms": 5}
+        mock_gmail.call.return_value = {"status": "success", "output": {}, "error": None, "latency_ms": 5}  # noqa: E501
 
         import app.mcp_clients as router_mod
         with patch.dict(router_mod._ROUTER, {"gmail": mock_gmail}):

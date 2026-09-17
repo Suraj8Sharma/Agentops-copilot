@@ -317,7 +317,7 @@ def _call_github_mcp(
         _log_event_github(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "TIMEOUT", "message": "timeout calling GitHub MCP server"},
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "TIMEOUT", "message": "timeout calling GitHub MCP server"},  # noqa: E501
             latency_ms=latency_ms,
         )
         return _make_error("TIMEOUT", "timeout calling GitHub MCP server", latency_ms)
@@ -326,7 +326,7 @@ def _call_github_mcp(
         _log_event_github(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "PROVIDER_ERROR", "message": f"network error: {exc}"},
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "PROVIDER_ERROR", "message": f"network error: {exc}"},  # noqa: E501
             latency_ms=latency_ms,
         )
         return _make_error("PROVIDER_ERROR", f"network error: {exc}", latency_ms)
@@ -339,16 +339,16 @@ def _call_github_mcp(
         _log_event_github(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "AUTH_EXPIRED", "message": "token revoked or expired — user must reconnect GitHub"},
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "AUTH_EXPIRED", "message": "token revoked or expired — user must reconnect GitHub"},  # noqa: E501
             latency_ms=latency_ms,
         )
-        return _make_error("AUTH_EXPIRED", "token revoked or expired — user must reconnect GitHub", latency_ms)
+        return _make_error("AUTH_EXPIRED", "token revoked or expired — user must reconnect GitHub", latency_ms)  # noqa: E501
 
     if response.status_code == 429:
         _log_event_github(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "RATE_LIMITED", "message": "rate limited"},
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "RATE_LIMITED", "message": "rate limited"},  # noqa: E501
             latency_ms=latency_ms,
         )
         return {
@@ -375,10 +375,10 @@ def _call_github_mcp(
         _log_event_github(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "PROVIDER_ERROR", "message": f"GitHub MCP returned HTTP {response.status_code}"},
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "PROVIDER_ERROR", "message": f"GitHub MCP returned HTTP {response.status_code}"},  # noqa: E501
             latency_ms=latency_ms,
         )
-        return _make_error("PROVIDER_ERROR", f"GitHub MCP returned HTTP {response.status_code}", latency_ms)
+        return _make_error("PROVIDER_ERROR", f"GitHub MCP returned HTTP {response.status_code}", latency_ms)  # noqa: E501
 
     # Parse SSE response
     try:
@@ -388,7 +388,7 @@ def _call_github_mcp(
         _log_event_github(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "PROVIDER_ERROR", "message": "invalid response from GitHub MCP server"},
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "PROVIDER_ERROR", "message": "invalid response from GitHub MCP server"},  # noqa: E501
             latency_ms=latency_ms,
         )
         return _make_error("PROVIDER_ERROR", "invalid response from GitHub MCP server", latency_ms)
@@ -400,7 +400,7 @@ def _call_github_mcp(
         _log_event_github(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": code, "message": msg},
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": code, "message": msg},  # noqa: E501
             latency_ms=latency_ms,
         )
         return _make_error(code, msg, latency_ms)
@@ -410,7 +410,7 @@ def _call_github_mcp(
     _log_event_github(
         task_id=task_id,
         event_type="tool_result",
-        payload={"tool_name": tool_name, "mcp_server": "github", "status": "success", "output": result},
+        payload={"tool_name": tool_name, "mcp_server": "github", "status": "success", "output": result},  # noqa: E501
         latency_ms=latency_ms,
     )
     return {"status": "success", "output": result, "error": None, "latency_ms": latency_ms}
@@ -452,5 +452,5 @@ def call(
         return _make_error("AUTH_EXPIRED", "no GitHub OAuth token — user must connect GitHub", 0)
 
     # 4. Call MCP
-    return _call_github_mcp(tool_name, mcp_tool, input_params, user_id, token, idempotency_key, task_id=task_id)
+    return _call_github_mcp(tool_name, mcp_tool, input_params, user_id, token, idempotency_key, task_id=task_id)  # noqa: E501
 
