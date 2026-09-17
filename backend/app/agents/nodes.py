@@ -25,7 +25,7 @@ import time
 from typing import Any
 
 from app.agents.state import AgentState, RiskDecision, Step
-from app.db.supabase_client import supabase
+from app.db.supabase_client import supabase_admin
 from app.mcp_clients import call_tool
 from app.risk.risk_rules import lookup
 
@@ -46,19 +46,19 @@ def _log_event(
     step_id: str | None = None,
     latency_ms: int | None = None,
 ) -> None:
-    """Write one row to execution_logs (best-effort — never raises)."""
+    """Helper to write to execution_logs."""
+    from app.db.supabase_client import supabase_admin
+
+    row = {
+        "task_id": task_id,
+        "step_id": step_id,
+        "agent_name": agent_name,
+        "event_type": event_type,
+        "payload": payload,
+        "latency_ms": latency_ms,
+    }
     try:
-        row: dict[str, Any] = {
-            "task_id": task_id,
-            "agent_name": agent_name,
-            "event_type": event_type,
-            "payload": payload,
-        }
-        if step_id is not None:
-            row["step_id"] = step_id
-        if latency_ms is not None:
-            row["latency_ms"] = latency_ms
-        supabase.table("execution_logs").insert(row).execute()
+        supabase_admin.table("execution_logs").insert(row).execute()
     except Exception:
         # Log failures must never crash the planner — audit is best-effort.
         logger.warning(
@@ -137,38 +137,47 @@ _STUB_PLANS: dict[str, list[Step]] = {
 # ---------------------------------------------------------------------------
 
 
-def intent_classify(state: AgentState) -> dict[str, Any]:
+async def intent_classify(state: AgentState) -> dict[str, Any]:
     """Classify the user's raw_input into a one-of-N intent label.
-
-    D13 stub: deterministic keyword matching.
-    D18 replacement: Groq/Gemini LLM call with a classification prompt.
+    
+    D18: Uses Groq/Gemini LLM call with a classification prompt.
     """
-    t0 = time.monotonic()
-    raw = (state.get("raw_input") or "").lower()
+    from app.llm.router import route_llm_call
 
-    # Order matters: more specific or read-only intents are checked first
-    # to avoid "show me my calendar" being swallowed by the schedule branch.
-    if any(k in raw for k in ("issue", "bug", "ticket", "github")):
-        intent = "file_issue"
-    elif any(k in raw for k in ("check", "list", "show", "what", "when")):
-        # Read-only queries — show/list calendar, check events, etc.
-        intent = "read_calendar"
-    elif any(k in raw for k in ("email", "send", "mail")):
-        intent = "send_email"
-    elif any(k in raw for k in ("schedule", "meeting", "call", "calendar", "event")):
-        if any(k in raw for k in ("professor", "external", "outside", "@")):
-            intent = "schedule_event_external"
-        else:
-            intent = "schedule_event"
-    else:
+    t0 = time.monotonic()
+    raw = (state.get("raw_input") or "").strip()
+    
+    if not raw:
         intent = "unclassified"
+    else:
+        valid_intents = list(_STUB_PLANS.keys())
+        prompt = (
+            f"You are the intent classification module of an AI agent.\n"
+            f"Classify the user's request into EXACTLY ONE of the following intents: {valid_intents}\n"  # noqa: E501
+            f"If the request does not clearly match any of these, output: unclassified\n"
+            f"Respond with ONLY the raw intent string, nothing else. No markdown, no explanation.\n\n"  # noqa: E501
+            f"User Request: {raw}"
+        )
+        
+        try:
+            llm_resp = await route_llm_call(prompt, request_type="routing")
+            # Clean up response: lowercased, stripped, remove punctuation
+            intent_out = llm_resp.text.strip().lower().replace("`", "").replace('"', "").replace("'", "")  # noqa: E501
+            if intent_out in valid_intents:
+                intent = intent_out
+            else:
+                logger.warning("intent_classify: LLM returned invalid intent %r, defaulting to unclassified", intent_out)  # noqa: E501
+                intent = "unclassified"
+        except Exception:
+            logger.error("intent_classify: LLM call failed, defaulting to unclassified", exc_info=True)  # noqa: E501
+            intent = "unclassified"
 
     latency_ms = int((time.monotonic() - t0) * 1000)
     _log_event(
         task_id=state["task_id"],
         agent_name="planner",
         event_type="plan_created",
-        payload={"intent": intent, "source": "stub"},
+        payload={"intent": intent, "source": "llm"},
         latency_ms=latency_ms,
     )
     logger.info("intent_classify: task_id=%s intent=%s", state["task_id"], intent)
@@ -180,14 +189,18 @@ def intent_classify(state: AgentState) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def plan(state: AgentState) -> dict[str, Any]:
+async def plan(state: AgentState) -> dict[str, Any]:
     """Produce a list[Step] from the intent and write a task_plans row.
 
-    D13 stub: hardcoded lookup table keyed by intent label.
-    D18 replacement: LLM structured output (JSON array of Steps).
+    D18: LLM structured output (JSON array of Steps).
     """
+    import json
+
+    from app.llm.router import route_llm_call
+
     t0 = time.monotonic()
     intent = state.get("intent", "unclassified")
+    raw = state.get("raw_input", "")
 
     if intent == "unclassified":
         # Fail immediately — nothing to plan.
@@ -195,10 +208,10 @@ def plan(state: AgentState) -> dict[str, Any]:
             task_id=state["task_id"],
             agent_name="planner",
             event_type="error",
-            payload={"reason": "could not classify intent", "source": "stub"},
+            payload={"reason": "could not classify intent", "source": "llm"},
         )
         try:
-            supabase.table("tasks").update({"status": "failed"}).eq(
+            supabase_admin.table("tasks").update({"status": "failed"}).eq(
                 "id", state["task_id"]
             ).execute()
         except Exception:
@@ -208,11 +221,9 @@ def plan(state: AgentState) -> dict[str, Any]:
         logger.warning("plan: unclassified intent for task_id=%s", state["task_id"])
         return {"plan": [], "plan_id": None, "error": "could not classify intent"}
 
-    steps: list[Step] = _STUB_PLANS.get(intent, [])
-
     # --- DB write 1: UPDATE tasks.status → "planning" ---
     try:
-        supabase.table("tasks").update({"status": "planning"}).eq("id", state["task_id"]).execute()
+        supabase_admin.table("tasks").update({"status": "planning"}).eq("id", state["task_id"]).execute()  # noqa: E501
     except Exception:
         logger.warning(
             "Failed to set task status=planning [task_id=%s]",
@@ -220,12 +231,58 @@ def plan(state: AgentState) -> dict[str, Any]:
             exc_info=True,
         )
 
+    # Get the template plan
+    template_steps = _STUB_PLANS.get(intent, [])
+    template_json = [dict(s) for s in template_steps]
+
+    prompt = (
+        f"You are the planning module of an AI agent.\n"
+        f"The user's intent is '{intent}'.\n"
+        f"The user's raw request is '{raw}'.\n\n"
+        f"Here is the JSON template for the steps required for this intent:\n"
+        f"{json.dumps(template_json, indent=2)}\n\n"
+        f"Your task is to fill in the [placeholder] and TBD values with actual parameters extracted from the user's request. "  # noqa: E501
+        f"For dates or times, format them appropriately or leave them as TBD if completely unspecified. "  # noqa: E501
+        f"Output ONLY a raw JSON array matching this structure. Do NOT include markdown blocks like ```json ... ```, just the array itself."  # noqa: E501
+    )
+
+    plan_steps: list[Step] = []
+    
+    try:
+        llm_resp = await route_llm_call(prompt, request_type="planning")
+        raw_json = llm_resp.text.strip()
+        # Clean markdown if present
+        if raw_json.startswith("```json"):
+            raw_json = raw_json[7:]
+        if raw_json.startswith("```"):
+            raw_json = raw_json[3:]
+        if raw_json.endswith("```"):
+            raw_json = raw_json[:-3]
+        raw_json = raw_json.strip()
+        
+        parsed = json.loads(raw_json)
+        if not isinstance(parsed, list):
+            raise ValueError("LLM did not return a JSON array")
+        
+        for item in parsed:
+            plan_steps.append(
+                Step(
+                    tool_name=item["tool_name"],
+                    mcp_server=item["mcp_server"],
+                    input_params=item.get("input_params", {}),
+                )
+            )
+    except Exception:
+        logger.error("plan: LLM generation failed or returned invalid JSON, falling back to template", exc_info=True)  # noqa: E501
+        # Fall back to template plan if LLM goes crazy
+        plan_steps = template_steps
+
     # --- DB write 2: INSERT task_plans row ---
-    plan_json = [dict(s) for s in steps]
+    plan_json = [dict(s) for s in plan_steps]
     plan_id: str | None = None
     try:
         result = (
-            supabase.table("task_plans")
+            supabase_admin.table("task_plans")
             .insert(
                 {
                     "task_id": state["task_id"],
@@ -255,10 +312,10 @@ def plan(state: AgentState) -> dict[str, Any]:
         task_id=state["task_id"],
         agent_name="planner",
         event_type="plan_created",
-        payload={"plan": plan_json, "source": "stub", "plan_id": plan_id},
+        payload={"plan": plan_json, "source": "llm", "plan_id": plan_id},
         latency_ms=latency_ms,
     )
-    return {"plan": steps, "plan_id": plan_id}
+    return {"plan": plan_steps, "plan_id": plan_id}
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +364,7 @@ def risk_tag(state: AgentState) -> dict[str, Any]:
         if plan_id:
             try:
                 step_result = (
-                    supabase.table("plan_steps")
+                    supabase_admin.table("plan_steps")
                     .insert(
                         {
                             "plan_id": plan_id,
@@ -350,7 +407,7 @@ def risk_tag(state: AgentState) -> dict[str, Any]:
     # --- DB write: UPDATE task_plans.status → "active" ---
     if plan_id:
         try:
-            supabase.table("task_plans").update({"status": "active"}).eq("id", plan_id).execute()
+            supabase_admin.table("task_plans").update({"status": "active"}).eq("id", plan_id).execute()  # noqa: E501
         except Exception:
             logger.warning(
                 "risk_tag: failed to set task_plans active [plan_id=%s]",
@@ -384,7 +441,7 @@ def route_step(state: AgentState) -> str:
     # If all steps are done, task is completed
     if current >= len(steps):
         try:
-            supabase.table("tasks").update({"status": "completed"}).eq(
+            supabase_admin.table("tasks").update({"status": "completed"}).eq(
                 "id", state["task_id"]
             ).execute()
         except Exception:
@@ -418,7 +475,7 @@ def approval_gate_node(state: AgentState) -> dict[str, Any]:
     if plan_id:
         try:
             res = (
-                supabase.table("plan_steps")
+                supabase_admin.table("plan_steps")
                 .select("id")
                 .eq("plan_id", plan_id)
                 .eq("step_index", current)
@@ -450,7 +507,7 @@ def approval_gate_node(state: AgentState) -> dict[str, Any]:
             step_id=step_id,
         )
         try:
-            supabase.table("tasks").update({"status": "failed"}).eq("id", task_id).execute()
+            supabase_admin.table("tasks").update({"status": "failed"}).eq("id", task_id).execute()
         except Exception:
             pass
         # returning error halts the graph implicitly
@@ -512,6 +569,7 @@ def execute(state: AgentState) -> dict[str, Any]:
             input_params=step["input_params"],
             user_id=user_id,
             idempotency_key=idempotency_key,
+            task_id=task_id,
         )
 
         if result["status"] == "success":
@@ -543,7 +601,7 @@ def execute(state: AgentState) -> dict[str, Any]:
 
     if plan_id:
         try:
-            supabase.table("plan_steps").update(
+            supabase_admin.table("plan_steps").update(
                 {
                     "status": step_status,
                     "result": result.get("output") if result else None,
@@ -561,7 +619,7 @@ def execute(state: AgentState) -> dict[str, Any]:
 
     if step_status == "failed":
         try:
-            supabase.table("tasks").update({"status": "failed"}).eq("id", task_id).execute()
+            supabase_admin.table("tasks").update({"status": "failed"}).eq("id", task_id).execute()
         except Exception:
             pass
         return {"step_results": step_results, "retries": retries_out, "error": "step_failed"}

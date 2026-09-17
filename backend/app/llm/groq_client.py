@@ -1,4 +1,3 @@
-import os
 import time
 
 from groq import APIStatusError, AsyncGroq, RateLimitError
@@ -29,12 +28,14 @@ async def call_groq(
         LLMServerError: On HTTP 5xx
         Other exceptions propagate unchanged
     """
-    if model is None:
-        model = os.environ.get("GROQ_MODEL_DEFAULT", "openai/gpt-oss-20b")
+    from app.core.config import settings
 
-    api_key = os.environ.get("GROQ_API_KEY")
+    if model is None:
+        model = getattr(settings, "GROQ_MODEL_DEFAULT", "openai/gpt-oss-20b")
+
+    api_key = settings.GROQ_API_KEY
     if not api_key:
-        raise ValueError("GROQ_API_KEY environment variable is not set")
+        raise ValueError("GROQ_API_KEY configuration is missing")
 
     client = AsyncGroq(api_key=api_key)
 

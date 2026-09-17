@@ -48,6 +48,7 @@ def call_tool(
     input_params: dict[str, Any],
     user_id: str,
     idempotency_key: str,
+    task_id: str = "unknown",
 ) -> dict[str, Any]:
     """Route a tool call to the correct MCP provider client.
 
@@ -57,6 +58,8 @@ def call_tool(
         input_params:     Tool arguments from the plan step.
         user_id:          UUID of the acting user.
         idempotency_key:  ``plan_id:step_index`` for deduplication.
+        task_id:          UUID of the parent task — forwarded to the client so
+                          it can write execution_logs rows with the correct FK.
 
     Returns:
         Standard envelope: ``{ status, output, error, latency_ms }``
@@ -80,4 +83,5 @@ def call_tool(
         input_params=input_params,
         user_id=user_id,
         idempotency_key=idempotency_key,
+        task_id=task_id,
     )

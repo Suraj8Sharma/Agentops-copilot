@@ -345,6 +345,6 @@ def test_call_tool_routes_gmail_server():
         tool_name="gmail.list_messages",
         input_params={"query": "is:unread"},
         user_id=USER_ID,
-        idempotency_key=IDEMPOTENCY_KEY,
+        idempotency_key=IDEMPOTENCY_KEY, task_id='unknown',
     )
     assert result["status"] == "success"

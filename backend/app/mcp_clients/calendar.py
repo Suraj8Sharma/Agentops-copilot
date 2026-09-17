@@ -85,11 +85,46 @@ def _fetch_user_token(user_id: str) -> str | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Execution log helper
+# ---------------------------------------------------------------------------
+
+
+def _log_event_calendar(
+    task_id: str,
+    event_type: str,
+    payload: dict[str, Any],
+    step_id: str | None = None,
+    latency_ms: int | None = None,
+) -> None:
+    """Write one row to execution_logs for a Calendar MCP event (best-effort)."""
+    try:
+        row: dict[str, Any] = {
+            "task_id": task_id,
+            "agent_name": "mcp_calendar",
+            "event_type": event_type,
+            "payload": payload,
+        }
+        if step_id is not None:
+            row["step_id"] = step_id
+        if latency_ms is not None:
+            row["latency_ms"] = latency_ms
+        supabase.table("execution_logs").insert(row).execute()
+    except Exception:
+        logger.warning(
+            "execution_logs write failed [mcp_calendar task_id=%s event_type=%s]",
+            task_id,
+            event_type,
+            exc_info=True,
+        )
+
+
 def call(
     tool_name: str,
     input_params: dict[str, Any],
     user_id: str,
     idempotency_key: str,
+    task_id: str = "unknown",
 ) -> dict[str, Any]:
     """Call a Google Calendar tool via the official MCP remote server.
 
@@ -99,6 +134,7 @@ def call(
         user_id:          UUID of the user — used to fetch their OAuth token.
         idempotency_key:  ``plan_id:step_index`` — passed as a request header
                           to prevent duplicate creates on retry.
+        task_id:          UUID of the parent task — used for execution_logs rows.
 
     Returns:
         Standard AgentOps MCP envelope::
@@ -150,7 +186,14 @@ def call(
         "X-Idempotency-Key": idempotency_key,
     }
 
-    # --- 4. Call the remote MCP server ----------------------------------------
+    # --- 4. Log tool_called before any external effect ------------------------
+    _log_event_calendar(
+        task_id=task_id,
+        event_type="tool_called",
+        payload={"tool_name": tool_name, "mcp_server": "calendar", "input_params": input_params},
+    )
+
+    # --- 5. Call the remote MCP server ----------------------------------------
     try:
         response = httpx.post(
             CALENDAR_MCP_URL,
@@ -159,38 +202,43 @@ def call(
             timeout=_TIMEOUT,
         )
     except httpx.TimeoutException:
+        latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning(
             "calendar: timeout calling %s [tool=%s user=%s]",
             CALENDAR_MCP_URL,
             tool_name,
             user_id,
         )
-        return {
-            "status": "error",
-            "output": None,
-            "error": "timeout",
-            "latency_ms": int((time.monotonic() - t0) * 1000),
-        }
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "calendar", "error_code": "TIMEOUT", "message": "timeout"},  # noqa: E501
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": "timeout", "latency_ms": latency_ms}
     except httpx.RequestError as exc:
+        latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("calendar: network error [tool=%s]: %s", tool_name, exc)
-        return {
-            "status": "error",
-            "output": None,
-            "error": f"network error: {exc}",
-            "latency_ms": int((time.monotonic() - t0) * 1000),
-        }
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "calendar", "error_code": "NETWORK_ERROR", "message": str(exc)},  # noqa: E501
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": f"network error: {exc}", "latency_ms": latency_ms}  # noqa: E501
 
     latency_ms = int((time.monotonic() - t0) * 1000)
 
-    # --- 5. Handle HTTP-level errors ------------------------------------------
+    # --- 6. Handle HTTP-level errors ------------------------------------------
     if response.status_code == 429:
         logger.warning("calendar: rate limited [tool=%s user=%s]", tool_name, user_id)
-        return {
-            "status": "rate_limited",
-            "output": None,
-            "error": "rate_limited",
-            "latency_ms": latency_ms,
-        }
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "calendar", "error_code": "RATE_LIMITED", "message": "rate limited"},  # noqa: E501
+            latency_ms=latency_ms,
+        )
+        return {"status": "rate_limited", "output": None, "error": "rate_limited", "latency_ms": latency_ms}  # noqa: E501
 
     if response.status_code == 401:
         logger.warning(
@@ -198,12 +246,13 @@ def call(
             tool_name,
             user_id,
         )
-        return {
-            "status": "error",
-            "output": None,
-            "error": "unauthorized — token expired or revoked",
-            "latency_ms": latency_ms,
-        }
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "calendar", "error_code": "AUTH_EXPIRED", "message": "unauthorized — token expired or revoked"},  # noqa: E501
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": "unauthorized — token expired or revoked", "latency_ms": latency_ms}  # noqa: E501
 
     if not response.is_success:
         logger.error(
@@ -212,24 +261,26 @@ def call(
             tool_name,
             user_id,
         )
-        return {
-            "status": "error",
-            "output": None,
-            "error": f"MCP server returned HTTP {response.status_code}",
-            "latency_ms": latency_ms,
-        }
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "calendar", "error_code": "PROVIDER_ERROR", "message": f"MCP server returned HTTP {response.status_code}"},  # noqa: E501
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": f"MCP server returned HTTP {response.status_code}", "latency_ms": latency_ms}  # noqa: E501
 
-    # --- 6. Parse MCP JSON-RPC response ---------------------------------------
+    # --- 7. Parse MCP JSON-RPC response ---------------------------------------
     try:
         body = response.json()
     except Exception:
         logger.error("calendar: non-JSON response from MCP server [tool=%s]", tool_name)
-        return {
-            "status": "error",
-            "output": None,
-            "error": "invalid JSON from MCP server",
-            "latency_ms": latency_ms,
-        }
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "calendar", "error_code": "PROVIDER_ERROR", "message": "invalid JSON from MCP server"},  # noqa: E501
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": "invalid JSON from MCP server", "latency_ms": latency_ms}  # noqa: E501
 
     if "error" in body:
         rpc_error = body["error"]
@@ -239,12 +290,13 @@ def call(
             rpc_error.get("code"),
             rpc_error.get("message"),
         )
-        return {
-            "status": "error",
-            "output": None,
-            "error": rpc_error.get("message", "unknown MCP error"),
-            "latency_ms": latency_ms,
-        }
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "calendar", "error_code": str(rpc_error.get("code")), "message": rpc_error.get("message", "unknown MCP error")},  # noqa: E501
+            latency_ms=latency_ms,
+        )
+        return {"status": "error", "output": None, "error": rpc_error.get("message", "unknown MCP error"), "latency_ms": latency_ms}  # noqa: E501
 
     result = body.get("result", {})
     logger.info(
@@ -252,5 +304,11 @@ def call(
         tool_name,
         user_id,
         latency_ms,
+    )
+    _log_event_calendar(
+        task_id=task_id,
+        event_type="tool_result",
+        payload={"tool_name": tool_name, "mcp_server": "calendar", "status": "success", "output": result},  # noqa: E501
+        latency_ms=latency_ms,
     )
     return {"status": "success", "output": result, "error": None, "latency_ms": latency_ms}

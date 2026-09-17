@@ -12,7 +12,7 @@ from app.agents.graph import build_graph
 from app.agents.state import AgentState
 from app.core.config import settings
 from app.core.security import CurrentUser
-from app.db.supabase_client import supabase
+from app.db.supabase_client import supabase_admin
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ async def checkpointer_lifespan() -> AsyncIterator[None]:
     pool = AsyncConnectionPool(
         conninfo=settings.LANGGRAPH_CHECKPOINTER_DB_URI,
         max_size=10,
-        kwargs={"autocommit": True, "prepare_threshold": 0},
+        kwargs={"autocommit": True, "prepare_threshold": None},
     )
     await pool.wait()
     _pool = pool
@@ -70,7 +70,7 @@ async def run_planner(task_id: str, user: CurrentUser) -> None:
     except Exception:
         logger.error("run_planner: unhandled exception", exc_info=True)
         try:
-            supabase.table("tasks").update({"status": "failed"}).eq("id", task_id).execute()
+            supabase_admin.table("tasks").update({"status": "failed"}).eq("id", task_id).execute()
         except Exception:
             pass
 
@@ -88,7 +88,7 @@ async def resume_planner(task_id: str, decision: str) -> None:
 def _fetch_raw_input(task_id: str) -> str:
     try:
         result = (
-            supabase.table("tasks")
+            supabase_admin.table("tasks")
             .select("raw_input, transcription_text, input_type")
             .eq("id", task_id)
             .limit(1)

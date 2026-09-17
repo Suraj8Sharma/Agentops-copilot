@@ -391,21 +391,6 @@ def test_github_create_issue_idempotency_precheck():
 # ---------------------------------------------------------------------------
 
 
-def test_github_execution_log_stub_present():
-    """_log_execution exists and is callable (async stub)."""
-    import asyncio
-
-    from app.mcp_clients.github import _log_execution
-
-    # Should not raise
-    asyncio.run(_log_execution("tool_called", {"tool": "github.create_issue"}, 100))
-
-
-# ---------------------------------------------------------------------------
-# AC-9: Error codes match §7 taxonomy
-# ---------------------------------------------------------------------------
-
-
 def test_github_429_returns_rate_limited():
     """429 from GitHub MCP → status=rate_limited, code=RATE_LIMITED."""
     from app.mcp_clients.github import _session_cache, call
@@ -605,6 +590,6 @@ def test_call_tool_routes_github_server():
         tool_name="github.list_issues",
         input_params={"repo": "o/r"},
         user_id=USER_ID,
-        idempotency_key=IDEMPOTENCY_KEY,
+        idempotency_key=IDEMPOTENCY_KEY, task_id='unknown',
     )
     assert result["status"] == "success"

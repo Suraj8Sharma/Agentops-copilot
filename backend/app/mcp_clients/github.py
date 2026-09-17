@@ -223,18 +223,37 @@ def _invalidate_session(user_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Execution log stub
+# Execution log helper
 # ---------------------------------------------------------------------------
 
 
-async def _log_execution(event_type: str, payload: dict, latency_ms: int) -> None:
-    """Log to execution_logs table.
-
-    The table exists (migration 20260909000009), but the insert helper isn't
-    wired yet.  Stub with debug logging for now.
-    """
-    # TODO(D22): wire to real execution_logs insert via supabase service role.
-    logger.debug("[execution_log-stub] %s: %s (%dms)", event_type, payload, latency_ms)
+def _log_event_github(
+    task_id: str,
+    event_type: str,
+    payload: dict[str, Any],
+    step_id: str | None = None,
+    latency_ms: int | None = None,
+) -> None:
+    """Write one row to execution_logs for a GitHub MCP event (best-effort)."""
+    try:
+        row: dict[str, Any] = {
+            "task_id": task_id,
+            "agent_name": "mcp_github",
+            "event_type": event_type,
+            "payload": payload,
+        }
+        if step_id is not None:
+            row["step_id"] = step_id
+        if latency_ms is not None:
+            row["latency_ms"] = latency_ms
+        supabase.table("execution_logs").insert(row).execute()
+    except Exception:
+        logger.warning(
+            "execution_logs write failed [mcp_github task_id=%s event_type=%s]",
+            task_id,
+            event_type,
+            exc_info=True,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +277,7 @@ def _call_github_mcp(
     user_id: str,
     token: str,
     idempotency_key: str,
+    task_id: str = "unknown",
 ) -> dict[str, Any]:
     """Call a GitHub tool via the MCP server."""
     t0 = time.monotonic()
@@ -283,13 +303,32 @@ def _call_github_mcp(
         },
     }
 
+    # Log before any external effect
+    _log_event_github(
+        task_id=task_id,
+        event_type="tool_called",
+        payload={"tool_name": tool_name, "mcp_server": "github", "input_params": input_params},
+    )
+
     try:
         response = httpx.post(GITHUB_MCP_URL, json=payload, headers=headers, timeout=_TIMEOUT)
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - t0) * 1000)
+        _log_event_github(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "TIMEOUT", "message": "timeout calling GitHub MCP server"},  # noqa: E501
+            latency_ms=latency_ms,
+        )
         return _make_error("TIMEOUT", "timeout calling GitHub MCP server", latency_ms)
     except httpx.RequestError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
+        _log_event_github(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "PROVIDER_ERROR", "message": f"network error: {exc}"},  # noqa: E501
+            latency_ms=latency_ms,
+        )
         return _make_error("PROVIDER_ERROR", f"network error: {exc}", latency_ms)
 
     latency_ms = int((time.monotonic() - t0) * 1000)
@@ -297,11 +336,21 @@ def _call_github_mcp(
     # HTTP-level errors
     if response.status_code == 401:
         _invalidate_session(user_id)
-        return _make_error(
-            "AUTH_EXPIRED", "token revoked or expired — user must reconnect GitHub", latency_ms
+        _log_event_github(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "AUTH_EXPIRED", "message": "token revoked or expired — user must reconnect GitHub"},  # noqa: E501
+            latency_ms=latency_ms,
         )
+        return _make_error("AUTH_EXPIRED", "token revoked or expired — user must reconnect GitHub", latency_ms)  # noqa: E501
 
     if response.status_code == 429:
+        _log_event_github(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "RATE_LIMITED", "message": "rate limited"},  # noqa: E501
+            latency_ms=latency_ms,
+        )
         return {
             "status": "rate_limited",
             "output": None,
@@ -323,27 +372,47 @@ def _call_github_mcp(
         latency_ms = int((time.monotonic() - t0) * 1000)
 
     if not response.is_success:
-        return _make_error(
-            "PROVIDER_ERROR", f"GitHub MCP returned HTTP {response.status_code}", latency_ms
+        _log_event_github(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "PROVIDER_ERROR", "message": f"GitHub MCP returned HTTP {response.status_code}"},  # noqa: E501
+            latency_ms=latency_ms,
         )
+        return _make_error("PROVIDER_ERROR", f"GitHub MCP returned HTTP {response.status_code}", latency_ms)  # noqa: E501
 
     # Parse SSE response
     try:
         body = _parse_sse_json(response)
     except Exception:
         logger.error("github: failed to parse response [tool=%s]", tool_name)
+        _log_event_github(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": "PROVIDER_ERROR", "message": "invalid response from GitHub MCP server"},  # noqa: E501
+            latency_ms=latency_ms,
+        )
         return _make_error("PROVIDER_ERROR", "invalid response from GitHub MCP server", latency_ms)
 
     if "error" in body:
         rpc_error = body["error"]
         msg = rpc_error.get("message", "unknown MCP error")
-        # Check for invalid params
-        if rpc_error.get("code") == -32602:
-            return _make_error("INVALID_PARAMS", msg, latency_ms)
-        return _make_error("PROVIDER_ERROR", msg, latency_ms)
+        code = "INVALID_PARAMS" if rpc_error.get("code") == -32602 else "PROVIDER_ERROR"
+        _log_event_github(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "mcp_server": "github", "error_code": code, "message": msg},  # noqa: E501
+            latency_ms=latency_ms,
+        )
+        return _make_error(code, msg, latency_ms)
 
     result = body.get("result", {})
     logger.info("github: success [tool=%s user=%s latency=%dms]", tool_name, user_id, latency_ms)
+    _log_event_github(
+        task_id=task_id,
+        event_type="tool_result",
+        payload={"tool_name": tool_name, "mcp_server": "github", "status": "success", "output": result},  # noqa: E501
+        latency_ms=latency_ms,
+    )
     return {"status": "success", "output": result, "error": None, "latency_ms": latency_ms}
 
 
@@ -357,25 +426,9 @@ def call(
     input_params: dict[str, Any],
     user_id: str,
     idempotency_key: str,
+    task_id: str = "unknown",
 ) -> dict[str, Any]:
-    """Route a GitHub tool call to the MCP server.
-
-    Args:
-        tool_name:        Internal tool name e.g. ``github.create_issue``.
-        input_params:     Tool arguments from the plan step.
-        user_id:          UUID of the acting user.
-        idempotency_key:  ``plan_id:step_index`` for deduplication.
-
-    Returns:
-        Standard AgentOps MCP envelope::
-
-            {
-                "status":     "success" | "error" | "rate_limited",
-                "output":     dict | None,
-                "error":      dict | None,   # {"code": ..., "message": ...}
-                "latency_ms": int,
-            }
-    """
+    """Route a GitHub tool call to the MCP server."""
     # 1. Resolve tool name
     mcp_tool = _TOOL_NAME_MAP.get(tool_name)
     if mcp_tool is None:
@@ -399,4 +452,5 @@ def call(
         return _make_error("AUTH_EXPIRED", "no GitHub OAuth token — user must connect GitHub", 0)
 
     # 4. Call MCP
-    return _call_github_mcp(tool_name, mcp_tool, input_params, user_id, token, idempotency_key)
+    return _call_github_mcp(tool_name, mcp_tool, input_params, user_id, token, idempotency_key, task_id=task_id)  # noqa: E501
+

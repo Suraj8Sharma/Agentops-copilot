@@ -152,7 +152,7 @@ def test_execute_node_runs_low_risk_calendar_tool():
     )
 
     with (
-        patch("app.agents.nodes.supabase", mock_supabase),
+        patch("app.agents.nodes.supabase_admin", mock_supabase),
         patch("app.mcp_clients.calendar.supabase", mock_supabase),
         patch("httpx.post", return_value=mock_response),
     ):
@@ -256,7 +256,7 @@ def test_execute_skips_when_state_error_set():
     state = _make_state(error="could not classify intent")
     mock_supabase = _make_supabase_mock()
 
-    with patch("app.agents.nodes.supabase", mock_supabase), patch("httpx.post") as mock_post:
+    with patch("app.agents.nodes.supabase_admin", mock_supabase), patch("httpx.post") as mock_post:
         result = execute(state)
 
     mock_post.assert_not_called()
@@ -311,7 +311,7 @@ def test_execute_marks_task_failed_on_mcp_error():
     mock_supabase.table.side_effect = table_side_effect
 
     with (
-        patch("app.agents.nodes.supabase", mock_supabase),
+        patch("app.agents.nodes.supabase_admin", mock_supabase),
         patch("app.mcp_clients.calendar.supabase", mock_supabase),
         patch("httpx.post", return_value=error_response),
         patch("time.sleep"),
@@ -352,7 +352,7 @@ def test_execute_retries_on_transient_error():
         return success
 
     with (
-        patch("app.agents.nodes.supabase", mock_supabase),
+        patch("app.agents.nodes.supabase_admin", mock_supabase),
         patch("app.mcp_clients.calendar.supabase", mock_supabase),
         patch("httpx.post", side_effect=httpx_side_effect),
         patch("time.sleep"),
