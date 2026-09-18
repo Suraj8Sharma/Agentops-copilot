@@ -4,15 +4,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 sys.modules["google"] = MagicMock()
 sys.modules["google.genai"] = MagicMock()
 
-import pytest
+import pytest  # noqa: E402
 
-from app.llm.types import (
+from app.llm.types import (  # noqa: E402
     LLMProvider,
     LLMRateLimitError,
     LLMResponse,
 )
-from app.notifications.banner_model import (
-    BANNER_DEFAULTS,
+from app.notifications.banner_model import (  # noqa: E402
     BANNER_MAX_CHARS,
     generate_banner,
 )
@@ -35,7 +34,7 @@ async def test_banner_model_matches_triggering_event_type():
     )
 
     with patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq, \
-         patch("app.llm.router.log_llm_usage") as mock_log:
+         patch("app.llm.router.log_llm_usage"):
         mock_groq.return_value = mock_response
 
         # Test valid type
@@ -45,7 +44,7 @@ async def test_banner_model_matches_triggering_event_type():
             "title": "Email",
             "body": "Send email to bob",
         }
-        
+
         banner = await generate_banner(event)
         assert banner == "Your agent wants to send an email - tap to review."
 
@@ -72,12 +71,12 @@ async def test_banner_model_output_length_under_limit():
     )
 
     with patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq, \
-         patch("app.llm.router.log_llm_usage") as mock_log:
+         patch("app.llm.router.log_llm_usage"):
         mock_groq.return_value = mock_response
 
         event = {"type": "task_completed"}
         banner = await generate_banner(event)
-        
+
         assert banner is not None
         assert len(banner) <= BANNER_MAX_CHARS
         assert banner.endswith("...")
@@ -89,7 +88,7 @@ async def test_banner_model_groq_fallback_to_gemini():
     Test that a forced Groq failure falls back to Gemini.
     """
     groq_error = LLMRateLimitError("Groq rate limit")
-    
+
     mock_gemini_response = LLMResponse(
         text="Fallback gemini banner.",
         provider=LLMProvider.GEMINI,
@@ -102,18 +101,18 @@ async def test_banner_model_groq_fallback_to_gemini():
 
     with patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq:
         mock_groq.side_effect = groq_error
-        
+
         with patch("app.llm.router.call_gemini", new_callable=AsyncMock) as mock_gemini:
             mock_gemini.return_value = mock_gemini_response
-            
+
             with patch("app.llm.router.log_llm_usage") as mock_log:
                 event = {"type": "digest_ready", "digest_period": "daily"}
                 banner = await generate_banner(event)
-                
+
                 assert banner == "Fallback gemini banner."
                 mock_groq.assert_called_once()
                 mock_gemini.assert_called_once()
-                
+
                 # Check that logging was called with request_type="banner"
                 # Once for the failed Groq call, once for the successful Gemini call
                 assert mock_log.call_count == 2
@@ -124,15 +123,18 @@ async def test_banner_model_groq_fallback_to_gemini():
 @pytest.mark.asyncio
 async def test_banner_model_all_fail():
     """
-    Test that when all providers fail, it falls back to BANNER_DEFAULTS.
-    Or, actually, if route_llm_call raises an error, it returns None.
-    Wait, the spec says "Module must fail safely — return no banner line (or a minimal non-LLM fallback)".
-    The code currently returns None on exception.
+    Verify that banner generation fails safely when the LLM route fails.
+
+    The specification permits returning no banner line or a minimal
+    non-LLM fallback. The current implementation returns None.
     """
-    with patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq:
+    with patch(
+        "app.llm.router.call_groq",
+        new_callable=AsyncMock,
+    ) as mock_groq:
         mock_groq.side_effect = Exception("Total failure")
-        
+
         event = {"type": "oauth_expiring"}
         banner = await generate_banner(event)
-        
+
         assert banner is None

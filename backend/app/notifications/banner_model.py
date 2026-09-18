@@ -291,10 +291,7 @@ def build_banner_user_prompt(event: dict) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-import logging
-from app.llm.router import route_llm_call
 
-_logger = logging.getLogger(__name__)
 
 async def generate_banner(event: dict) -> str | None:
     """
@@ -310,26 +307,26 @@ async def generate_banner(event: dict) -> str | None:
     if event_type not in BANNER_DEFAULTS:
         _logger.error(f"Unknown notification event type: {event_type}")
         return None
-        
+
     user_prompt = build_banner_user_prompt(event)
-    
+
     full_prompt = f"System: {BANNER_SYSTEM_PROMPT}\n\nUser: {user_prompt}"
-    
+
     try:
         response = await route_llm_call(
             prompt=full_prompt,
             request_type="banner"
         )
-        
+
         if not response or not response.text:
             return BANNER_DEFAULTS.get(event_type)
-            
+
         banner_text = response.text.strip()
-        
+
         if len(banner_text) > BANNER_MAX_CHARS:
             _logger.warning(f"Banner exceeded {BANNER_MAX_CHARS} chars, truncating.")
             banner_text = banner_text[:BANNER_MAX_CHARS - 3] + "..."
-            
+
         return banner_text
     except Exception as e:
         _logger.error(f"Failed to generate banner: {e}", exc_info=True)
