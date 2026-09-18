@@ -285,36 +285,47 @@ def build_banner_user_prompt(event: dict) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def generate_banner(event: dict) -> str | None:
+import logging
+from app.llm.router import route_llm_call
+
+_logger = logging.getLogger(__name__)
+
+async def generate_banner(event: dict) -> str | None:
     """
     Generate a short banner line for a notification event.
-
-    This is a STUB for the D11 spec. The real implementation is built on D17.
 
     Args:
         event: Notification event dict. See module docstring for full shape.
 
     Returns:
         A short banner string (<= 80 chars), or None if generation fails.
-        None is acceptable — banner_text is nullable by design. The notification
-        still fires with title+body intact if banner_text is None.
-
-    Raises:
-        Nothing — all exceptions are caught internally. This function is
-        advisory-only and must never block a notification from being sent.
-
-    Implementation notes for D17:
-        1. Call LLM router with BANNER_SYSTEM_PROMPT + build_banner_user_prompt(event).
-        2. Log to llm_usage_logs with request_type="banner".
-        3. If output > BANNER_MAX_CHARS, truncate with "…" and log a warning.
-        4. If output is empty or None, use BANNER_DEFAULTS.get(event["type"]).
-        5. If unknown type, log error and return None.
-        6. Groq 429 → Gemini fallback is handled by the shared LLM router;
-           no banner-specific exception path is needed here.
     """
-    # D11: Stub only — raises NotImplementedError to make it clear this is unbuilt.
-    # D17 replaces this with the real LLM call.
-    raise NotImplementedError(
-        "generate_banner() is a D11 spec stub. "
-        "Full implementation is scheduled for D17 (2026-09-10)."
-    )
+    event_type = event.get("type")
+    if event_type not in BANNER_DEFAULTS:
+        _logger.error(f"Unknown notification event type: {event_type}")
+        return None
+        
+    user_prompt = build_banner_user_prompt(event)
+    
+    full_prompt = f"System: {BANNER_SYSTEM_PROMPT}\n\nUser: {user_prompt}"
+    
+    try:
+        response = await route_llm_call(
+            prompt=full_prompt,
+            request_type="banner"
+        )
+        
+        if not response or not response.text:
+            return BANNER_DEFAULTS.get(event_type)
+            
+        banner_text = response.text.strip()
+        
+        if len(banner_text) > BANNER_MAX_CHARS:
+            _logger.warning(f"Banner exceeded {BANNER_MAX_CHARS} chars, truncating.")
+            banner_text = banner_text[:BANNER_MAX_CHARS - 3] + "..."
+            
+        return banner_text
+    except Exception as e:
+        _logger.error(f"Failed to generate banner: {e}", exc_info=True)
+        return None
+
