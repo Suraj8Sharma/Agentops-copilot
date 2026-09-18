@@ -57,9 +57,14 @@ class AppRouter {
       case AppRoutes.onboarding:
         return _page(const OnboardingScreen(), settings);
       case AppRoutes.home:
-        return _page(HomeScreen(), settings);
+        return _page(const HomeScreen(), settings);
       case AppRoutes.taskComposer:
-        return _page(const TaskComposerScreen(), settings);
+        final args = settings.arguments;
+        final composerArgs = args is TaskComposerRouteArgs ? args : null;
+        return _page(
+          TaskComposerScreen(onTaskSubmitted: composerArgs?.onTaskSubmitted),
+          settings,
+        );
       case AppRoutes.planView:
         return _page(const PlanViewScreen(), settings);
       case AppRoutes.approval:
