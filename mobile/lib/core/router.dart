@@ -59,12 +59,7 @@ class AppRouter {
       case AppRoutes.home:
         return _page(const HomeScreen(), settings);
       case AppRoutes.taskComposer:
-        final args = settings.arguments;
-        final composerArgs = args is TaskComposerRouteArgs ? args : null;
-        return _page(
-          TaskComposerScreen(onTaskSubmitted: composerArgs?.onTaskSubmitted),
-          settings,
-        );
+        return _page(const TaskComposerScreen(), settings);
       case AppRoutes.planView:
         return _page(const PlanViewScreen(), settings);
       case AppRoutes.approval:
