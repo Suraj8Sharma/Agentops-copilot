@@ -149,14 +149,17 @@ from __future__ import annotations
 import logging
 
 from app.llm.router import route_llm_call
+from app.notifications.banner_contract import (
+    BANNER_MAX_CHARS,
+    NOTIFICATION_TYPES,
+    NotificationBannerPayload,
+)
 
 _logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
-
-BANNER_MAX_CHARS = 80
 
 # Safe hardcoded fallbacks — used when LLM returns an unusable response.
 # These are NOT LLM-generated; they are a last-resort safety net.
@@ -304,7 +307,7 @@ async def generate_banner(event: dict) -> str | None:
         A short banner string (<= 80 chars), or None if generation fails.
     """
     event_type = event.get("type")
-    if event_type not in BANNER_DEFAULTS:
+    if event_type not in NOTIFICATION_TYPES:
         _logger.error(f"Unknown notification event type: {event_type}")
         return None
 
@@ -331,4 +334,31 @@ async def generate_banner(event: dict) -> str | None:
     except Exception as e:
         _logger.error(f"Failed to generate banner: {e}", exc_info=True)
         return None
+
+
+def build_banner_payload(
+    event: dict,
+    banner_text: str | None,
+    *,
+    notification_id: str | None = None,
+    related_task_id: str | None = None,
+    read: bool = False,
+    created_at: str | None = None,
+) -> NotificationBannerPayload:
+    """Assemble the row-shaped payload shared with the mobile banner widget.
+
+    Trigger rules own ``type``, ``title``, ``body`` and task linkage. This
+    helper only places the model's advisory ``banner_text`` into that contract.
+    It never produces approval or risk decisions.
+    """
+    return NotificationBannerPayload(
+        notification_id=notification_id,
+        type=event["type"],
+        title=event.get("title", ""),
+        body=event.get("body", ""),
+        banner_text=banner_text,
+        related_task_id=related_task_id or event.get("task_id"),
+        read=read,
+        created_at=created_at,
+    )
 
