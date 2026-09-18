@@ -146,6 +146,12 @@ prompt: plain English, no invented details, non-alarming, advisory only.
 
 from __future__ import annotations
 
+import logging
+
+from app.llm.router import route_llm_call
+
+_logger = logging.getLogger(__name__)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
@@ -284,11 +290,6 @@ def build_banner_user_prompt(event: dict) -> str:
 # D11 STUB: generate_banner() — implementation is D17
 # ──────────────────────────────────────────────────────────────────────────────
 
-
-import logging
-from app.llm.router import route_llm_call
-
-_logger = logging.getLogger(__name__)
 
 async def generate_banner(event: dict) -> str | None:
     """

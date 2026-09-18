@@ -1,8 +1,4 @@
-import sys
-from unittest.mock import AsyncMock, MagicMock, patch
-
-sys.modules["google"] = MagicMock()
-sys.modules["google.genai"] = MagicMock()
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -12,7 +8,6 @@ from app.llm.types import (
     LLMResponse,
 )
 from app.notifications.banner_model import (
-    BANNER_DEFAULTS,
     BANNER_MAX_CHARS,
     generate_banner,
 )
@@ -35,7 +30,7 @@ async def test_banner_model_matches_triggering_event_type():
     )
 
     with patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq, \
-         patch("app.llm.router.log_llm_usage") as mock_log:
+         patch("app.llm.router.log_llm_usage"):
         mock_groq.return_value = mock_response
 
         # Test valid type
@@ -72,7 +67,7 @@ async def test_banner_model_output_length_under_limit():
     )
 
     with patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq, \
-         patch("app.llm.router.log_llm_usage") as mock_log:
+         patch("app.llm.router.log_llm_usage"):
         mock_groq.return_value = mock_response
 
         event = {"type": "task_completed"}
@@ -124,10 +119,10 @@ async def test_banner_model_groq_fallback_to_gemini():
 @pytest.mark.asyncio
 async def test_banner_model_all_fail():
     """
-    Test that when all providers fail, it falls back to BANNER_DEFAULTS.
-    Or, actually, if route_llm_call raises an error, it returns None.
-    Wait, the spec says "Module must fail safely — return no banner line (or a minimal non-LLM fallback)".
-    The code currently returns None on exception.
+    Test that when all providers fail, the function returns None.
+
+    The module must fail safely by returning no banner line or a minimal
+    non-LLM fallback.
     """
     with patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq:
         mock_groq.side_effect = Exception("Total failure")
