@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:agentops_copilot/core/router.dart';
 import 'package:agentops_copilot/core/theme.dart';
 import 'package:agentops_copilot/features/home/home_screen.dart';
+import 'package:agentops_copilot/features/home/task_service.dart';
 import 'package:agentops_copilot/features/plan_view/plan_view_screen.dart';
 
 void main() {
@@ -114,9 +115,18 @@ void main() {
   });
 
   testWidgets('home task tiles route to the plan view', (tester) async {
+    final mockAppTask = AppTask(
+      id: 'task-planning',
+      inputType: 'text',
+      rawInput: 'Prepare a weekly team update from my calendar',
+      status: TaskStatus.planning,
+      createdAt: DateTime(2026, 8, 27, 8, 45),
+    );
+    TaskService.fetchTasksOverride = () async => [mockAppTask];
+
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.light,
-      home: HomeScreen(tasks: <MockTask>[mockTasks[1]]),
+      home: const HomeScreen(),
       onGenerateRoute: (settings) {
         if (settings.name == AppRoutes.planView) {
           return MaterialPageRoute<void>(
@@ -126,9 +136,12 @@ void main() {
         return null;
       },
     ));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('task-planning')));
     await tester.pumpAndSettle();
     expect(find.byType(PlanViewScreen), findsOneWidget);
+    
+    TaskService.fetchTasksOverride = null;
   });
 }
