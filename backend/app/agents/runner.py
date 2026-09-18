@@ -24,6 +24,17 @@ _graph = None
 @contextlib.asynccontextmanager
 async def checkpointer_lifespan() -> AsyncIterator[None]:
     global _pool, _checkpointer, _graph
+    if not settings.LANGGRAPH_CHECKPOINTER_DB_URI:
+        logger.info("LANGGRAPH_CHECKPOINTER_DB_URI not configured; using MemorySaver for LangGraph.")
+        from langgraph.checkpoint.memory import MemorySaver
+
+        _checkpointer = MemorySaver()
+        _graph = build_graph(checkpointer=_checkpointer)
+        yield
+        _checkpointer = None
+        _graph = None
+        return
+
     logger.info("Setting up langgraph Postgres checkpointer...")
     pool = AsyncConnectionPool(
         conninfo=settings.LANGGRAPH_CHECKPOINTER_DB_URI,
@@ -47,11 +58,12 @@ async def checkpointer_lifespan() -> AsyncIterator[None]:
 
 async def run_planner(task_id: str, user: CurrentUser) -> None:
     logger.info("run_planner: starting [task_id=%s user_id=%s]", task_id, user.id)
+    raw_input, input_type = _fetch_task_input(task_id)
     initial_state = AgentState(
         task_id=task_id,
         user_id=user.id,
-        raw_input=_fetch_raw_input(task_id),
-        input_type="text",
+        raw_input=raw_input,
+        input_type=input_type,
         intent="",
         plan=[],
         plan_id=None,
@@ -85,7 +97,7 @@ async def resume_planner(task_id: str, decision: str) -> None:
         logger.error("resume_planner: unhandled exception", exc_info=True)
 
 
-def _fetch_raw_input(task_id: str) -> str:
+def _fetch_task_input(task_id: str) -> tuple[str, str]:
     try:
         result = (
             supabase_admin.table("tasks")
@@ -96,7 +108,9 @@ def _fetch_raw_input(task_id: str) -> str:
         )
         if result.data:
             row = result.data[0]
-            return row.get("transcription_text") or row.get("raw_input") or ""
+            raw_text = row.get("transcription_text") or row.get("raw_input") or ""
+            input_type = row.get("input_type") or "text"
+            return raw_text, input_type
     except Exception:
         pass
-    return ""
+    return "", "text"

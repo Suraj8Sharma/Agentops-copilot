@@ -53,6 +53,14 @@ def gate(
     try:
         existing = supabase.table("approvals").select("*").eq("step_id", step_id).execute()
         if not existing.data:
+            from app.risk.risk_explainer import generate_deterministic_explanation
+
+            explanation = generate_deterministic_explanation(
+                user_request="",
+                planned_action=step,
+                matched_rule=decision.get("rationale", "HARDCODED_RULE"),
+            )
+
             _log_event(
                 task_id=task_id,
                 agent_name="risk_gate",
@@ -63,6 +71,7 @@ def gate(
                     "mcp_server": step.get("mcp_server"),
                     "risk_tier": decision["risk_tier"],
                     "rationale": decision["rationale"],
+                    "explanation": explanation.model_dump(),
                 },
                 step_id=step_id,
             )

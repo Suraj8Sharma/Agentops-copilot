@@ -12,3 +12,5 @@ langgraph-checkpoint-postgres
 psycopg[binary]
 groq
 google-genai
+python-multipart
+faster-whisper

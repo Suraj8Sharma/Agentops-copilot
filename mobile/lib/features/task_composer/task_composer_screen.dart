@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/router.dart';
 import '../../core/theme.dart';
 
 /// Mock payload matching the eventual POST /tasks request.
@@ -133,10 +134,10 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  key: const Key('voice-mode-placeholder'),
-                  onPressed: null,
-                  icon: const Icon(Icons.mic_none_outlined),
-                  label: const Text('Voice mode coming soon'),
+                  key: const Key('voice-mode-button'),
+                  onPressed: () => Navigator.pushNamed(context, AppRoutes.voiceInput),
+                  icon: const Icon(Icons.mic_outlined),
+                  label: const Text('Voice mode (Speak task)'),
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),

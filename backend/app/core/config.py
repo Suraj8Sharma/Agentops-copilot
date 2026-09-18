@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     RENDER_DEPLOY_HOOK_URL: str = ""
 
     # -------------------------------------------------------------------------
+    # STT / Voice Settings (Jigyasu — D20)
+    # -------------------------------------------------------------------------
+    STT_ENGINE: str = "faster-whisper"  # "faster-whisper" | "cloud" | "mock"
+    STT_MODEL_SIZE: str = "base"        # "tiny" | "base" | "small" | "medium"
+    STT_DEVICE: str = "cpu"             # "cpu" | "cuda" | "auto"
+    STT_COMPUTE_TYPE: str = "int8"      # "int8" | "float32" | "float16"
+    STT_MAX_AUDIO_SIZE_BYTES: int = 25 * 1024 * 1024  # 25 MB
+    STT_MAX_DURATION_SECONDS: float = 300.0           # 5 minutes
+
+    # -------------------------------------------------------------------------
     # D15 note: gmail.send_message routes through the Gmail REST API using the
     # user's own OAuth token (oauth_connections, provider='gmail').
     # No additional env vars are required for Gmail sending.

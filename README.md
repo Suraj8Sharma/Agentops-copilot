@@ -10,9 +10,11 @@ acceptance criteria, and risk register.
 ## Monorepo layout
 
 ```
-backend/    FastAPI backend — agents, MCP clients, risk gate, API routes
-mobile/     Flutter client
-docs/       diary/ (daily logs), reports/ (weekly reports), eval/ (golden dataset)
+backend/    FastAPI backend — agents, MCP clients, risk gate, voice STT, API routes
+mobile/     Flutter client — voice input recorder, approval cards, task composer
+dataset/    Risk explanation fine-tuning synthetic dataset & validation suite
+training/   Google Colab QLoRA 4-bit fine-tuning scripts for Qwen2.5-1.5B
+docs/       Technical manual, architecture docs, viva guides, and diary logs
 .github/    CI workflows
 ```
 

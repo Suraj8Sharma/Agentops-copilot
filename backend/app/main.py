@@ -15,13 +15,18 @@
     http://localhost:8000/docs
 """
 
+import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from fastapi import FastAPI
 
-from app.api.routers import approvals, auth, health, me, oauth, tasks
+from app.api.routers import approvals, auth, health, me, oauth, tasks, voice
 from app.db.supabase_client import probe_connection
 
 logging.basicConfig(
@@ -67,3 +72,5 @@ app.include_router(me.router)
 app.include_router(tasks.router)
 app.include_router(oauth.router)
 app.include_router(approvals.router)
+app.include_router(voice.router)
+app.include_router(voice.router, prefix="/api/v1")
