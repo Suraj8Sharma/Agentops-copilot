@@ -170,6 +170,47 @@ BANNER_DEFAULTS: dict[str, str] = {
     "oauth_expiring": "A connected account needs your attention.",
 }
 
+# D20 copy rules. This is intentionally data, not branching behavior: the
+# triggering type remains authoritative and banner_text remains advisory copy.
+BANNER_COPY_RULES: dict[str, dict[str, object]] = {
+    "approval_needed": {
+        "permitted_input_fields": "title, body, tool_name, input_params, task_id",
+        "must_state": "what action is pending and the affected tool or target when supplied",
+        "must_not": (
+            "recommend approve or reject, imply the action already ran, invent urgency, "
+            "or expose raw UUIDs"
+        ),
+        "max_length": BANNER_MAX_CHARS,
+        "example_output": "Your agent wants to send an email — tap to review.",
+    },
+    "task_completed": {
+        "permitted_input_fields": "title, body, tool_name, task_id",
+        "must_state": "what finished, in factual past tense",
+        "must_not": (
+            "claim a result absent from the event, expose raw UUIDs, or imply a future action"
+        ),
+        "max_length": BANNER_MAX_CHARS,
+        "example_output": "Done — your calendar event was created successfully.",
+    },
+    "digest_ready": {
+        "permitted_input_fields": "title, body, digest_period",
+        "must_state": "that a digest is available and its period when supplied",
+        "must_not": "invent digest contents or counts, or imply an action occurred",
+        "max_length": BANNER_MAX_CHARS,
+        "example_output": "Your daily digest is ready — see your recent activity.",
+    },
+    "oauth_expiring": {
+        "permitted_input_fields": "title, body, provider, expires_at",
+        "must_state": "which provider connection needs renewal and that reconnecting is needed",
+        "must_not": (
+            "say expired, critical, danger, broken, or failed; hide the provider; "
+            "or invent an expiry date"
+        ),
+        "max_length": BANNER_MAX_CHARS,
+        "example_output": "Your Google connection needs a quick reconnect.",
+    },
+}
+
 # ──────────────────────────────────────────────────────────────────────────────
 # D11 DELIVERABLE: System Prompt Draft
 # ──────────────────────────────────────────────────────────────────────────────
@@ -280,6 +321,17 @@ def build_banner_user_prompt(event: dict) -> str:
         if expires_at:
             context_lines.append(f"Expires at: {expires_at}")
 
+    rule = BANNER_COPY_RULES[notification_type]
+    context_lines.extend(
+        [
+            "Copy rule for this event type:",
+            f"- Permitted facts: {rule['permitted_input_fields']}",
+            f"- Must convey: {rule['must_state']}",
+            f"- Must not: {rule['must_not']}",
+            f"- Maximum length: {rule['max_length']} characters",
+            f"- Reference example (do not copy absent facts): {rule['example_output']}",
+        ]
+    )
     context = "\n".join(context_lines)
 
     return (
