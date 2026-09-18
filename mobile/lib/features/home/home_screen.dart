@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/router.dart';
 import '../../core/theme.dart';
+import '../task_composer/task_composer_screen.dart';
 import 'task_service.dart';
 
 class AppTask {
@@ -166,7 +167,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openTaskComposer(BuildContext context) {
-    Navigator.of(context).pushNamed(AppRoutes.taskComposer);
+    Navigator.of(context).pushNamed(
+      AppRoutes.taskComposer,
+      arguments: TaskComposerRouteArgs(onTaskSubmitted: _fetchData),
+    );
   }
 
   @override
