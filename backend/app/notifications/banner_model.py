@@ -146,6 +146,12 @@ prompt: plain English, no invented details, non-alarming, advisory only.
 
 from __future__ import annotations
 
+import logging
+
+from app.llm.router import route_llm_call
+
+_logger = logging.getLogger(__name__)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../../core/router.dart';
 import 'plan_service.dart';
 
 /// Mock plan data mirrors the eventual task_plans + plan_steps response.
@@ -205,6 +206,9 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
         _plan = null;
         _isLoading = false;
       });
+    } on PlanAuthException catch (_) {
+      if (!mounted) return;
+      Navigator.of(context).pushNamed(AppRoutes.signIn);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -245,11 +249,15 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              const Icon(Icons.error_outline, color: AppColors.error, size: AppSpacing.xxl),
+              const Icon(Icons.error_outline,
+                  color: AppColors.error, size: AppSpacing.xxl),
               const SizedBox(height: AppSpacing.md),
-              Text('Failed to load plan', style: Theme.of(context).textTheme.titleMedium),
+              Text('Failed to load plan',
+                  style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: AppSpacing.xs),
-              Text(_errorMessage!, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
+              Text(_errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium),
               const SizedBox(height: AppSpacing.lg),
               ElevatedButton.icon(
                 onPressed: _fetchPlan,
@@ -272,7 +280,8 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text('Your copilot\'s plan', style: Theme.of(context).textTheme.headlineMedium),
+          Text('Your copilot\'s plan',
+              style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: AppSpacing.xs),
           Text(
             'Review the sequence before any action runs.',
