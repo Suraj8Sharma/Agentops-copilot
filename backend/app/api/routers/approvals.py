@@ -17,6 +17,64 @@ class ApprovalDecision(BaseModel):
     decision: Literal["approved", "rejected"]
 
 
+@router.get("/pending")
+def pending_approvals(user: CurrentUser = Depends(get_current_user)):
+    """Return the authenticated user's undecided approval steps."""
+    try:
+        approvals = (
+            supabase.table("approvals")
+            .select("*")
+            .eq("user_id", user.id)
+            .is_("decision", "null")
+            .order("created_at", desc=False)
+            .execute()
+        )
+        pending = []
+        for approval in approvals.data or []:
+            step_result = (
+                supabase.table("plan_steps")
+                .select("*")
+                .eq("id", approval["step_id"])
+                .limit(1)
+                .execute()
+            )
+            if not step_result.data:
+                continue
+            step = step_result.data[0]
+            plan_result = (
+                supabase.table("task_plans")
+                .select("task_id")
+                .eq("id", step["plan_id"])
+                .limit(1)
+                .execute()
+            )
+            if not plan_result.data:
+                continue
+            if step.get("status") != "awaiting_approval":
+                continue
+            pending.append(
+                {
+                    "step_id": step["id"],
+                    "task_id": plan_result.data[0]["task_id"],
+                    "tool_name": step["tool_name"],
+                    "mcp_server": step["mcp_server"],
+                    "risk_tier": step["risk_tier"],
+                    "requires_approval": step["requires_approval"],
+                    "input_params": step.get("input_params") or {},
+                    "explanation_text": approval.get("explanation_text"),
+                    "status": step["status"],
+                }
+            )
+        return pending
+    except Exception as exc:
+        logger.error(
+            "DB error listing pending approvals for user_id=%s: %s", user.id, exc
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve pending approvals."
+        ) from exc
+
+
 @router.post("/{step_id}")
 async def decide_approval(
     step_id: str,
@@ -39,7 +97,7 @@ async def decide_approval(
     # Verify the row is currently pending
     if approval.get("decision") is not None:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Approval already decided"
+            status_code=status.HTTP_409_CONFLICT, detail="Approval already decided"
         )
 
     # Update approvals
@@ -52,8 +110,15 @@ async def decide_approval(
             }
         )
         .eq("id", approval["id"])
+        .is_("decision", "null")
         .execute()
     )
+
+    if not update_res.data:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Approval was already decided.",
+        )
 
     updated_approval = update_res.data[0]
 
