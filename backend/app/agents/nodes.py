@@ -603,9 +603,8 @@ def execute(state: AgentState) -> dict[str, Any]:
         try:
             supabase_admin.table("plan_steps").update(
                 {
-                    "status": step_status,
-                    "result": result.get("output") if result else None,
-                    "error_message": result.get("error") if result else "no result",
+                    "status": "done" if step_status == "completed" else "failed",
+                    "output": result,
                 }
             ).eq("plan_id", plan_id).eq("step_index", idx).execute()
         except Exception:

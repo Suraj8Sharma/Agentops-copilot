@@ -19,6 +19,12 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
+import sys
+
+if sys.platform == "win32":
+    import asyncio
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from fastapi import FastAPI
 
 from app.api.routers import approvals, auth, health, me, oauth, tasks

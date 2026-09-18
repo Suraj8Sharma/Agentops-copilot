@@ -62,14 +62,14 @@ def _fetch_user_token(user_id: str) -> str | None:
             .select("access_token")
             .eq("user_id", user_id)
             .eq("provider", "google")
-            .single()
+            .limit(1)
             .execute()
         )
         if not result.data:
             logger.warning("calendar: no Google token found for user_id=%s", user_id)
             return None
 
-        encrypted_token = result.data["access_token"]
+        encrypted_token = result.data[0]["access_token"]
         try:
             fernet = Fernet(settings.ENCRYPTION_KEY.encode())
             return fernet.decrypt(encrypted_token.encode()).decode()

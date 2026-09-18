@@ -3,7 +3,7 @@ import logging
 from langgraph.types import interrupt
 
 from app.agents.state import RiskDecision
-from app.db.supabase_client import supabase
+from app.db.supabase_client import supabase_admin
 from app.risk.risk_rules import lookup
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ def gate(
 
     # Check if we already created an approval request (since interrupt reruns the node on resume)
     try:
-        existing = supabase.table("approvals").select("*").eq("step_id", step_id).execute()
+        existing = supabase_admin.table("approvals").select("*").eq("step_id", step_id).execute()
         if not existing.data:
             _log_event(
                 task_id=task_id,
@@ -67,12 +67,16 @@ def gate(
                 step_id=step_id,
             )
 
-            supabase.table("approvals").insert(
+            supabase_admin.table("approvals").insert(
                 {
                     "step_id": step_id,
                     "user_id": user_id,
                 }
             ).execute()
+            
+            supabase_admin.table("tasks").update({"status": "awaiting_approval"}).eq("id", task_id).execute()
+            if step_id:
+                supabase_admin.table("plan_steps").update({"status": "awaiting_approval"}).eq("id", step_id).execute()
     except Exception as e:
         logger.error(f"gate: failed to process approvals [step_id={step_id}]", exc_info=True)
         raise e
