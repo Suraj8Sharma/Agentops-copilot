@@ -61,7 +61,8 @@ class AppRouter {
       case AppRoutes.taskComposer:
         return _page(const TaskComposerScreen(), settings);
       case AppRoutes.planView:
-        return _page(const PlanViewScreen(), settings);
+        final taskId = settings.arguments as String?;
+        return _page(PlanViewScreen(taskId: taskId ?? ''), settings);
       case AppRoutes.approval:
         return _page(const ApprovalScreen(), settings);
       case AppRoutes.oauthConnections:
