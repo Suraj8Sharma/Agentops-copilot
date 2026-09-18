@@ -306,7 +306,7 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
 }
 
 class PlanSummary extends StatelessWidget {
-  const PlanSummary({required this.plan});
+  const PlanSummary({super.key, required this.plan});
   final MockPlan plan;
 
   @override
@@ -345,7 +345,7 @@ class PlanSummary extends StatelessWidget {
 }
 
 class PlanStepCard extends StatelessWidget {
-  const PlanStepCard({required this.step, required this.isLast});
+  const PlanStepCard({super.key, required this.step, required this.isLast});
   final PlanStep step;
   final bool isLast;
 
@@ -449,6 +449,7 @@ class PlanStepCard extends StatelessWidget {
 
 class StatusChip extends StatelessWidget {
   const StatusChip({
+    super.key,
     required this.label,
     required this.color,
     required this.backgroundColor,
