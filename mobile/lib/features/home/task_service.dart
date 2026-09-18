@@ -33,20 +33,46 @@ class TaskService {
     if (fetchTasksOverride != null) {
       return fetchTasksOverride!();
     }
-    
-    final token = await _getToken();
-    final response = await (httpClientOverride ?? http.Client()).get(
+
+    var token = await _getToken();
+    var response = await (httpClientOverride ?? http.Client()).get(
       Uri.parse('$baseUrl/tasks'),
-      headers: {
+      headers: <String, String>{
         if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
       },
     );
 
+    if (response.statusCode == 401 && refreshAccessTokenProvider != null) {
+      token = await refreshAccessTokenProvider!();
+      if (token == null || token.isEmpty) {
+        throw const TaskServiceException(
+          'Your session has expired. Please sign in again.',
+          requiresSignIn: true,
+        );
+      }
+      response = await (httpClientOverride ?? http.Client()).get(
+        Uri.parse('$baseUrl/tasks'),
+        headers: <String, String>{
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+    }
+
+    if (response.statusCode == 401) {
+      throw const TaskServiceException(
+        'Your session has expired. Please sign in again.',
+        requiresSignIn: true,
+      );
+    }
+
     if (response.statusCode == 200) {
       final decoded = jsonDecode(response.body);
       final list = decoded['tasks'] as List<dynamic>;
-      return list.map((e) => AppTask.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => AppTask.fromJson(e as Map<String, dynamic>))
+          .toList();
     } else {
       String errorMessage = 'Failed to load tasks';
       try {
@@ -85,11 +111,13 @@ class TaskService {
       );
     }
     if (response.statusCode != 201) {
-      throw TaskServiceException(_errorMessage(response, 'Failed to submit task.'));
+      throw TaskServiceException(
+          _errorMessage(response, 'Failed to submit task.'));
     }
 
     try {
-      return AppTask.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+      return AppTask.fromJson(
+          jsonDecode(response.body) as Map<String, dynamic>);
     } catch (_) {
       throw const TaskServiceException('The server returned an invalid task.');
     }
