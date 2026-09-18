@@ -237,6 +237,82 @@ def list_tasks(
 
 
 # ---------------------------------------------------------------------------
+# GET /tasks/{id}/plan
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{task_id}/plan",
+    summary="Get the active plan for a task",
+)
+def get_task_plan(
+    task_id: str,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> Any:
+    """Return the user's active task plan and its ordered steps."""
+    try:
+        _uuid.UUID(task_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task plan not found.",
+        ) from exc
+
+    try:
+        task_result = (
+            supabase.table("tasks")
+            .select("id")
+            .eq("id", task_id)
+            .eq("user_id", current_user.id)
+            .limit(1)
+            .execute()
+        )
+        if not task_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task plan not found.",
+            )
+
+        plan_result = (
+            supabase.table("task_plans")
+            .select("*")
+            .eq("task_id", task_id)
+            .eq("status", "active")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not plan_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task plan not found.",
+            )
+
+        plan = plan_result.data[0]
+        steps_result = (
+            supabase.table("plan_steps")
+            .select("*")
+            .eq("plan_id", plan["id"])
+            .order("step_index")
+            .execute()
+        )
+        return {"task_plan": plan, "plan_steps": steps_result.data or []}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(
+            "DB error fetching plan for task_id=%s user_id=%s: %s",
+            task_id,
+            current_user.id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve task plan.",
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
 # GET /tasks/{id}
 # ---------------------------------------------------------------------------
 
