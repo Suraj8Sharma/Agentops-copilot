@@ -12,7 +12,9 @@ from app.llm.types import (  # noqa: E402
     LLMResponse,
 )
 from app.notifications.banner_model import (  # noqa: E402
+    BANNER_COPY_RULES,
     BANNER_MAX_CHARS,
+    build_banner_user_prompt,
     generate_banner,
 )
 
@@ -142,3 +144,30 @@ async def test_banner_model_all_fail():
         banner = await generate_banner(event)
 
         assert banner is None
+
+
+def test_copy_rules_cover_each_contract_type_and_are_distinguishable():
+    assert set(BANNER_COPY_RULES) == {
+        "approval_needed",
+        "task_completed",
+        "digest_ready",
+        "oauth_expiring",
+    }
+    examples = {rule["example_output"] for rule in BANNER_COPY_RULES.values()}
+    assert len(examples) == 4
+    assert all(
+        rule["max_length"] <= BANNER_MAX_CHARS for rule in BANNER_COPY_RULES.values()
+    )
+
+
+def test_prompt_includes_type_specific_rules_and_approval_guardrail():
+    approval_prompt = build_banner_user_prompt(
+        {"type": "approval_needed", "title": "Review", "body": "Send email"}
+    )
+    oauth_prompt = build_banner_user_prompt(
+        {"type": "oauth_expiring", "title": "Reconnect", "body": "Google"}
+    )
+
+    assert "recommend approve or reject" in approval_prompt
+    assert "provider" in oauth_prompt.lower()
+    assert "Maximum length: 80 characters" in approval_prompt
