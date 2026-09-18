@@ -95,8 +95,8 @@ def _make_supabase_mock():
             # oauth_connections fetch
             s = MagicMock()
             s.eq.return_value = s
-            s.single.return_value = s
-            s.execute.return_value = MagicMock(data={"access_token": GOOGLE_TOKEN})
+            s.limit.return_value = s
+            s.execute.return_value = MagicMock(data=[{"access_token": GOOGLE_TOKEN}])
             return s
 
         def insert_side_effect(payload):
@@ -299,8 +299,8 @@ def test_execute_marks_task_failed_on_mcp_error():
         def select_side_effect(*args, **kwargs):
             s = MagicMock()
             s.eq.return_value = s
-            s.single.return_value = s
-            s.execute.return_value = MagicMock(data={"access_token": GOOGLE_TOKEN})
+            s.limit.return_value = s
+            s.execute.return_value = MagicMock(data=[{"access_token": GOOGLE_TOKEN}])
             return s
 
         t.update.side_effect = update_side_effect
@@ -451,10 +451,10 @@ def test_calendar_client_returns_error_on_no_token():
     mock_supabase = MagicMock()
     # Simulate no token found
     no_data = MagicMock()
-    no_data.data = None
+    no_data.data = []
     chain = MagicMock()
     chain.eq.return_value = chain
-    chain.single.return_value = chain
+    chain.limit.return_value = chain
     chain.execute.return_value = no_data
     mock_supabase.table.return_value.select.return_value = chain
 
