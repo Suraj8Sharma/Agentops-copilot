@@ -122,7 +122,9 @@ def _json_response(status_code: int = 200, body: dict | None = None) -> MagicMoc
     return resp
 
 
-def _sse_response(status_code: int = 200, result: dict | None = None, error: dict | None = None) -> MagicMock:  # noqa: E501
+def _sse_response(
+    status_code: int = 200, result: dict | None = None, error: dict | None = None
+) -> MagicMock:  # noqa: E501
     """SSE-style httpx response mock (used by github)."""
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code
@@ -166,6 +168,7 @@ class TestCalendarExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
+
             calendar.call(
                 tool_name="calendar.list_events",
                 input_params={"date_range": "this_week"},
@@ -174,9 +177,7 @@ class TestCalendarExecutionLogs:
                 task_id=TASK_ID,
             )
 
-        inserts = [
-            c for c in mock_supabase.table.return_value.insert.call_args_list
-        ]
+        inserts = [c for c in mock_supabase.table.return_value.insert.call_args_list]
         payloads = [c.args[0] for c in inserts]
         tool_called_rows = [p for p in payloads if p.get("event_type") == "tool_called"]
 
@@ -197,6 +198,7 @@ class TestCalendarExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
+
             result = calendar.call(
                 tool_name="calendar.list_events",
                 input_params={"date_range": "this_week"},
@@ -223,6 +225,7 @@ class TestCalendarExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
+
             result = calendar.call(
                 tool_name="calendar.list_events",
                 input_params={},
@@ -248,6 +251,7 @@ class TestCalendarExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
+
             result = calendar.call(
                 tool_name="calendar.list_events",
                 input_params={},
@@ -283,6 +287,7 @@ class TestGmailMcpExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
+
             gmail.call(
                 tool_name="gmail.list_messages",
                 input_params={"query": "is:unread"},
@@ -307,6 +312,7 @@ class TestGmailMcpExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
+
             result = gmail.call(
                 tool_name="gmail.list_messages",
                 input_params={"query": "is:unread"},
@@ -330,6 +336,7 @@ class TestGmailMcpExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
+
             result = gmail.call(
                 tool_name="gmail.list_messages",
                 input_params={},
@@ -353,6 +360,7 @@ class TestGmailMcpExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
+
             result = gmail.call(
                 tool_name="gmail.list_messages",
                 input_params={},
@@ -403,6 +411,7 @@ class TestGmailSendExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
+
             gmail.call(
                 tool_name="gmail.send_message",
                 input_params={"to": ["test@example.com"], "subject": "Hi", "body": "Hello"},
@@ -426,6 +435,7 @@ class TestGmailSendExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
+
             result = gmail.call(
                 tool_name="gmail.send_message",
                 input_params={"to": ["test@example.com"], "subject": "Hi", "body": "Hello"},
@@ -450,6 +460,7 @@ class TestGmailSendExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
+
             result = gmail.call(
                 tool_name="gmail.send_message",
                 input_params={"to": ["x@y.com"], "subject": "test", "body": "test"},
@@ -488,7 +499,11 @@ def _github_supabase(token: str = GITHUB_TOKEN) -> MagicMock:
 
 
 def _github_sse_success() -> MagicMock:
-    body = {"jsonrpc": "2.0", "id": IDEMPOTENCY_KEY, "result": {"number": 42, "url": "https://github.com/x/y/issues/42"}}
+    body = {
+        "jsonrpc": "2.0",
+        "id": IDEMPOTENCY_KEY,
+        "result": {"number": 42, "url": "https://github.com/x/y/issues/42"},
+    }
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = 200
     resp.is_success = True
@@ -501,7 +516,6 @@ def _github_sse_success() -> MagicMock:
 
 
 class TestGitHubExecutionLogs:
-
     def _init_resp(self) -> MagicMock:
         """Mock for the GitHub MCP initialize handshake — must have mcp-session-id header."""
         resp = MagicMock(spec=httpx.Response)
@@ -519,9 +533,12 @@ class TestGitHubExecutionLogs:
         with (
             patch("app.mcp_clients.github.supabase", mock_supabase),
             patch("app.mcp_clients.github._session_cache", {}),
-            patch("httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]),  # noqa: E501
+            patch(
+                "httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]
+            ),  # noqa: E501
         ):
             from app.mcp_clients import github
+
             github.call(
                 tool_name="github.create_issue",
                 input_params={"repo": "owner/repo", "title": "Bug", "body": "Details"},
@@ -541,9 +558,12 @@ class TestGitHubExecutionLogs:
         with (
             patch("app.mcp_clients.github.supabase", mock_supabase),
             patch("app.mcp_clients.github._session_cache", {}),
-            patch("httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]),  # noqa: E501
+            patch(
+                "httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]
+            ),  # noqa: E501
         ):
             from app.mcp_clients import github
+
             result = github.call(
                 tool_name="github.create_issue",
                 input_params={"repo": "owner/repo", "title": "Bug", "body": "Details"},
@@ -571,6 +591,7 @@ class TestGitHubExecutionLogs:
             patch("httpx.post", side_effect=[self._init_resp(), MagicMock(), auth_fail]),
         ):
             from app.mcp_clients import github
+
             result = github.call(
                 tool_name="github.create_issue",
                 input_params={"repo": "owner/repo", "title": "Bug", "body": "Details"},
@@ -595,9 +616,12 @@ class TestGitHubExecutionLogs:
         with (
             patch("app.mcp_clients.github.supabase", mock_supabase),
             patch("app.mcp_clients.github._session_cache", {}),
-            patch("httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]),  # noqa: E501
+            patch(
+                "httpx.post", side_effect=[self._init_resp(), MagicMock(), _github_sse_success()]
+            ),  # noqa: E501
         ):
             from app.mcp_clients import github
+
             result = github.call(
                 tool_name="github.create_issue",
                 input_params={"repo": "owner/repo", "title": "Bug", "body": "Details"},
@@ -633,12 +657,15 @@ def _slack_success_resp() -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = 200
     resp.is_success = True
-    resp.json.return_value = {"jsonrpc": "2.0", "id": IDEMPOTENCY_KEY, "result": {"ok": True, "ts": "1234.5678"}}  # noqa: E501
+    resp.json.return_value = {
+        "jsonrpc": "2.0",
+        "id": IDEMPOTENCY_KEY,
+        "result": {"ok": True, "ts": "1234.5678"},
+    }  # noqa: E501
     return resp
 
 
 class TestSlackExecutionLogs:
-
     def test_tool_called_writes_log(self):
         mock_supabase = _slack_supabase()
 
@@ -647,6 +674,7 @@ class TestSlackExecutionLogs:
             patch("httpx.post", return_value=_slack_success_resp()),
         ):
             from app.mcp_clients import slack
+
             slack.call(
                 tool_name="slack.post_message_channel",
                 input_params={"channel": "#general", "text": "Hello"},
@@ -670,6 +698,7 @@ class TestSlackExecutionLogs:
             patch("httpx.post", return_value=_slack_success_resp()),
         ):
             from app.mcp_clients import slack
+
             result = slack.call(
                 tool_name="slack.post_message_channel",
                 input_params={"channel": "#general", "text": "Hello"},
@@ -696,6 +725,7 @@ class TestSlackExecutionLogs:
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import slack
+
             result = slack.call(
                 tool_name="slack.post_message_channel",
                 input_params={"channel": "#general", "text": "Hello"},
@@ -721,6 +751,7 @@ class TestSlackExecutionLogs:
             patch("httpx.post", return_value=_slack_success_resp()),
         ):
             from app.mcp_clients import slack
+
             result = slack.call(
                 tool_name="slack.post_message_channel",
                 input_params={"channel": "#general", "text": "Hello"},
@@ -742,9 +773,15 @@ class TestCallToolTaskIdThreading:
 
     def test_call_tool_passes_task_id_to_calendar(self):
         mock_cal = MagicMock()
-        mock_cal.call.return_value = {"status": "success", "output": {}, "error": None, "latency_ms": 5}  # noqa: E501
+        mock_cal.call.return_value = {
+            "status": "success",
+            "output": {},
+            "error": None,
+            "latency_ms": 5,
+        }  # noqa: E501
 
         import app.mcp_clients as router_mod
+
         with patch.dict(router_mod._ROUTER, {"calendar": mock_cal}):
             router_mod.call_tool(
                 tool_name="calendar.list_events",
@@ -765,9 +802,15 @@ class TestCallToolTaskIdThreading:
 
     def test_call_tool_passes_task_id_to_gmail(self):
         mock_gmail = MagicMock()
-        mock_gmail.call.return_value = {"status": "success", "output": {}, "error": None, "latency_ms": 5}  # noqa: E501
+        mock_gmail.call.return_value = {
+            "status": "success",
+            "output": {},
+            "error": None,
+            "latency_ms": 5,
+        }  # noqa: E501
 
         import app.mcp_clients as router_mod
+
         with patch.dict(router_mod._ROUTER, {"gmail": mock_gmail}):
             router_mod.call_tool(
                 tool_name="gmail.send_message",
@@ -785,4 +828,3 @@ class TestCallToolTaskIdThreading:
             idempotency_key=IDEMPOTENCY_KEY,
             task_id=TASK_ID,
         )
-

@@ -590,6 +590,7 @@ def test_call_tool_routes_github_server():
         tool_name="github.list_issues",
         input_params={"repo": "o/r"},
         user_id=USER_ID,
-        idempotency_key=IDEMPOTENCY_KEY, task_id='unknown',
+        idempotency_key=IDEMPOTENCY_KEY,
+        task_id="unknown",
     )
     assert result["status"] == "success"

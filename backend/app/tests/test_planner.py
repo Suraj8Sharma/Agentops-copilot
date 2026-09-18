@@ -174,7 +174,7 @@ def test_graph_runs_three_nodes_in_order():
         ("schedule a call internally", "schedule_event"),
     ],
 )
-@pytest.mark.skip(reason='D13 stub obsolete')
+@pytest.mark.skip(reason="D13 stub obsolete")
 def test_intent_classify_stub_maps_known_keywords(raw_input, expected_intent):
     from app.agents.nodes import intent_classify
     from app.agents.state import AgentState
@@ -227,7 +227,7 @@ def test_intent_classify_unmatched_returns_unclassified():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason='D13 stub obsolete')
+@pytest.mark.skip(reason="D13 stub obsolete")
 def test_plan_writes_task_plans_row():
     from app.agents.nodes import plan
     from app.agents.state import AgentState
@@ -265,7 +265,7 @@ def test_plan_writes_task_plans_row():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason='D13 stub obsolete')
+@pytest.mark.skip(reason="D13 stub obsolete")
 def test_plan_sets_task_status_to_planning():
     from app.agents.nodes import plan
     from app.agents.state import AgentState
@@ -313,7 +313,7 @@ def test_plan_sets_task_status_to_planning():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason='D13 stub obsolete')
+@pytest.mark.skip(reason="D13 stub obsolete")
 def test_risk_tag_writes_plan_steps_correct_tiers():
     import app.risk.risk_rules as rr
     from app.agents.nodes import risk_tag
@@ -350,7 +350,7 @@ def test_risk_tag_writes_plan_steps_correct_tiers():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason='D13 stub obsolete')
+@pytest.mark.skip(reason="D13 stub obsolete")
 def test_risk_tag_fails_closed_on_unknown_action():
     from app.agents.nodes import risk_tag
     from app.agents.state import AgentState, Step
@@ -382,7 +382,7 @@ def test_risk_tag_fails_closed_on_unknown_action():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason='D13 stub obsolete')
+@pytest.mark.skip(reason="D13 stub obsolete")
 def test_execution_logs_written_per_node():
     """After a full graph run, execution_logs receives ≥3 inserts:
     plan_created (x2 from intent + plan), risk_tagged (x1 per step).
@@ -442,7 +442,7 @@ def test_execution_logs_written_per_node():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason='D13 stub obsolete')
+@pytest.mark.skip(reason="D13 stub obsolete")
 def test_unclassified_intent_sets_task_error():
     from app.agents.nodes import plan
     from app.agents.state import AgentState

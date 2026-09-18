@@ -33,8 +33,10 @@ async def test_banner_model_matches_triggering_event_type():
         rate_limited=False,
     )
 
-    with patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq, \
-         patch("app.llm.router.log_llm_usage"):
+    with (
+        patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq,
+        patch("app.llm.router.log_llm_usage"),
+    ):
         mock_groq.return_value = mock_response
 
         # Test valid type
@@ -70,8 +72,10 @@ async def test_banner_model_output_length_under_limit():
         rate_limited=False,
     )
 
-    with patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq, \
-         patch("app.llm.router.log_llm_usage"):
+    with (
+        patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq,
+        patch("app.llm.router.log_llm_usage"),
+    ):
         mock_groq.return_value = mock_response
 
         event = {"type": "task_completed"}

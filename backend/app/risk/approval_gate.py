@@ -73,10 +73,15 @@ def gate(
                     "user_id": user_id,
                 }
             ).execute()
-            
-            supabase_admin.table("tasks").update({"status": "awaiting_approval"}).eq("id", task_id).execute()
+
+            supabase_admin.table("tasks").update({"status": "awaiting_approval"}).eq(
+                "id", task_id
+            ).execute()
+
             if step_id:
-                supabase_admin.table("plan_steps").update({"status": "awaiting_approval"}).eq("id", step_id).execute()
+                supabase_admin.table("plan_steps").update({"status": "awaiting_approval"}).eq(
+                    "id", step_id
+                ).execute()
     except Exception as e:
         logger.error(f"gate: failed to process approvals [step_id={step_id}]", exc_info=True)
         raise e

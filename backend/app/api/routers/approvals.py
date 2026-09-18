@@ -67,9 +67,7 @@ def pending_approvals(user: CurrentUser = Depends(get_current_user)):
             )
         return pending
     except Exception as exc:
-        logger.error(
-            "DB error listing pending approvals for user_id=%s: %s", user.id, exc
-        )
+        logger.error("DB error listing pending approvals for user_id=%s: %s", user.id, exc)
         raise HTTPException(
             status_code=500, detail="Failed to retrieve pending approvals."
         ) from exc
@@ -96,9 +94,7 @@ async def decide_approval(
 
     # Verify the row is currently pending
     if approval.get("decision") is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Approval already decided"
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Approval already decided")
 
     # Update approvals
     update_res = (

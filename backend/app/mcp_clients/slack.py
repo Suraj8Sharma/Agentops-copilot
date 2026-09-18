@@ -201,7 +201,12 @@ def _call_slack_mcp(
         _log_event_slack(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "slack", "error_code": "TIMEOUT", "message": "timeout calling Slack MCP server"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "slack",
+                "error_code": "TIMEOUT",
+                "message": "timeout calling Slack MCP server",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
         return _make_error("TIMEOUT", "timeout calling Slack MCP server", latency_ms)
@@ -210,7 +215,12 @@ def _call_slack_mcp(
         _log_event_slack(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "slack", "error_code": "PROVIDER_ERROR", "message": f"network error: {exc}"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "slack",
+                "error_code": "PROVIDER_ERROR",
+                "message": f"network error: {exc}",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
         return _make_error("PROVIDER_ERROR", f"network error: {exc}", latency_ms)
@@ -222,16 +232,28 @@ def _call_slack_mcp(
         _log_event_slack(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "slack", "error_code": "AUTH_EXPIRED", "message": "token revoked or expired — user must reconnect Slack"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "slack",
+                "error_code": "AUTH_EXPIRED",
+                "message": "token revoked or expired — user must reconnect Slack",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
-        return _make_error("AUTH_EXPIRED", "token revoked or expired — user must reconnect Slack", latency_ms)  # noqa: E501
+        return _make_error(
+            "AUTH_EXPIRED", "token revoked or expired — user must reconnect Slack", latency_ms
+        )  # noqa: E501
 
     if response.status_code == 429:
         _log_event_slack(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "slack", "error_code": "RATE_LIMITED", "message": "rate limited"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "slack",
+                "error_code": "RATE_LIMITED",
+                "message": "rate limited",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
         return {
@@ -245,10 +267,17 @@ def _call_slack_mcp(
         _log_event_slack(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "slack", "error_code": "PROVIDER_ERROR", "message": f"Slack MCP returned HTTP {response.status_code}"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "slack",
+                "error_code": "PROVIDER_ERROR",
+                "message": f"Slack MCP returned HTTP {response.status_code}",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
-        return _make_error("PROVIDER_ERROR", f"Slack MCP returned HTTP {response.status_code}", latency_ms)  # noqa: E501
+        return _make_error(
+            "PROVIDER_ERROR", f"Slack MCP returned HTTP {response.status_code}", latency_ms
+        )  # noqa: E501
 
     # Parse JSON response
     try:
@@ -258,7 +287,12 @@ def _call_slack_mcp(
         _log_event_slack(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "slack", "error_code": "PROVIDER_ERROR", "message": "invalid response from Slack MCP server"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "slack",
+                "error_code": "PROVIDER_ERROR",
+                "message": "invalid response from Slack MCP server",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
         return _make_error("PROVIDER_ERROR", "invalid response from Slack MCP server", latency_ms)
@@ -270,7 +304,12 @@ def _call_slack_mcp(
         _log_event_slack(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "slack", "error_code": code, "message": msg},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "slack",
+                "error_code": code,
+                "message": msg,
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
         return _make_error(code, msg, latency_ms)
@@ -280,7 +319,12 @@ def _call_slack_mcp(
     _log_event_slack(
         task_id=task_id,
         event_type="tool_result",
-        payload={"tool_name": tool_name, "mcp_server": "slack", "status": "success", "output": result},  # noqa: E501
+        payload={
+            "tool_name": tool_name,
+            "mcp_server": "slack",
+            "status": "success",
+            "output": result,
+        },  # noqa: E501
         latency_ms=latency_ms,
     )
     return {"status": "success", "output": result, "error": None, "latency_ms": latency_ms}
@@ -322,5 +366,6 @@ def call(
         return _make_error("AUTH_EXPIRED", "no Slack OAuth token — user must connect Slack", 0)
 
     # 4. Call MCP
-    return _call_slack_mcp(tool_name, mcp_tool, input_params, user_id, token, idempotency_key, task_id=task_id)  # noqa: E501
-
+    return _call_slack_mcp(
+        tool_name, mcp_tool, input_params, user_id, token, idempotency_key, task_id=task_id
+    )  # noqa: E501

@@ -1,5 +1,4 @@
-
-with open('app/tests/test_planner.py', 'r', encoding='utf-8') as f:
+with open("app/tests/test_planner.py", "r", encoding="utf-8") as f:
     content = f.read()
 
 tests_to_skip = [
@@ -15,5 +14,5 @@ tests_to_skip = [
 for test in tests_to_skip:
     content = content.replace(test, f"@pytest.mark.skip(reason='D13 stub obsolete')\n{test}")
 
-with open('app/tests/test_planner.py', 'w', encoding='utf-8') as f:
+with open("app/tests/test_planner.py", "w", encoding="utf-8") as f:
     f.write(content)
