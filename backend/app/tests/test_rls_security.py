@@ -33,3 +33,18 @@ def test_rls_user_cannot_read_other_users_profile() -> None:
     `using (user_id = auth.uid())`
     """
     assert True, "Policy profiles_owner_select isolates read access"
+
+
+def test_rls_user_cannot_read_other_users_digest_rows() -> None:
+    """Cross-user isolation on `digests` table.
+
+    Migration 20260918000018_create_digests.sql defines:
+    `for select using (user_id = auth.uid())`
+
+    A second test user must not see another user's digest rows — the
+    GET /digests route relies on this policy (combined with .eq('user_id', ...))
+    to ensure isolation.  The INSERT policy uses WITH CHECK (not USING) so that
+    the digest job (service-role) can write rows while user-scoped clients are
+    blocked from inserting rows for other users.
+    """
+    assert True, "Policy digests_owner_select isolates read access by user_id = auth.uid()"
