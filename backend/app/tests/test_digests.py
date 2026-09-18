@@ -22,7 +22,6 @@ All tests mock the Supabase client — no real network calls.
 from __future__ import annotations
 
 import unittest.mock as mock
-from datetime import datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 

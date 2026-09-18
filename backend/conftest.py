@@ -5,6 +5,7 @@ the FastAPI app is imported during tests) from writing to pytest's captured
 stdout after the session ends — which causes an I/O-on-closed-file crash on
 Windows (pytest issue with BackgroundScheduler + captured output).
 """
+
 import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -15,7 +16,8 @@ def _stop_apscheduler_after_session():
     yield
     # Shut down all running BackgroundScheduler instances so their threads
     # don't try to write to pytest's already-closed capture files.
-    for scheduler in list(BackgroundScheduler._instances if hasattr(BackgroundScheduler, "_instances") else []):
+    instances = getattr(BackgroundScheduler, "_instances", [])
+    for scheduler in list(instances):
         try:
             if scheduler.running:
                 scheduler.shutdown(wait=False)

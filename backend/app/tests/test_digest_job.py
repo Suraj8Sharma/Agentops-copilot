@@ -25,9 +25,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from app.jobs.digest_job import _build_summary, run_digest_job
 
@@ -135,7 +133,7 @@ def test_digest_job_writes_row_for_user_with_completed_tasks() -> None:
     # execute() called twice: SELECT tasks, then INSERT digest
     chain.execute.side_effect = [
         _make_query_result(_COMPLETED_TASKS),  # SELECT
-        insert_result,                          # INSERT
+        insert_result,  # INSERT
     ]
 
     with patch("app.jobs.digest_job.supabase", mock_sb):
@@ -175,8 +173,8 @@ def test_digest_job_returns_count_of_rows_written() -> None:
 
     chain.execute.side_effect = [
         _make_query_result(_MULTI_USER_TASKS),  # SELECT
-        insert_result,                           # INSERT user A
-        insert_result,                           # INSERT user B
+        insert_result,  # INSERT user A
+        insert_result,  # INSERT user B
     ]
 
     with patch("app.jobs.digest_job.supabase", mock_sb):

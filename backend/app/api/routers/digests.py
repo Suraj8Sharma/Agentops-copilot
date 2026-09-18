@@ -15,11 +15,11 @@ Out of scope (D24+)
 """
 
 import logging
+from datetime import datetime
 from typing import Annotated, Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from datetime import datetime
 
 from app.core.security import CurrentUser, get_current_user
 from app.db.supabase_client import supabase
@@ -98,9 +98,7 @@ def list_digests(
 
         result = query.execute()
     except Exception as exc:
-        logger.error(
-            "DB error listing digests for user_id=%s: %s", current_user.id, exc
-        )
+        logger.error("DB error listing digests for user_id=%s: %s", current_user.id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve digests.",
