@@ -280,6 +280,7 @@ def test_call_tool_routes_slack_server():
         tool_name="slack.list_channels",
         input_params={},
         user_id=USER_ID,
-        idempotency_key=IDEMPOTENCY_KEY, task_id='unknown',
+        idempotency_key=IDEMPOTENCY_KEY,
+        task_id="unknown",
     )
     assert result["status"] == "success"

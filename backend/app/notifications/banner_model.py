@@ -346,8 +346,6 @@ def build_banner_user_prompt(event: dict) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-
-
 async def generate_banner(event: dict) -> str | None:
     """
     Generate a short banner line for a notification event.
@@ -368,10 +366,7 @@ async def generate_banner(event: dict) -> str | None:
     full_prompt = f"System: {BANNER_SYSTEM_PROMPT}\n\nUser: {user_prompt}"
 
     try:
-        response = await route_llm_call(
-            prompt=full_prompt,
-            request_type="banner"
-        )
+        response = await route_llm_call(prompt=full_prompt, request_type="banner")
 
         if not response or not response.text:
             return BANNER_DEFAULTS.get(event_type)
@@ -380,7 +375,7 @@ async def generate_banner(event: dict) -> str | None:
 
         if len(banner_text) > BANNER_MAX_CHARS:
             _logger.warning(f"Banner exceeded {BANNER_MAX_CHARS} chars, truncating.")
-            banner_text = banner_text[:BANNER_MAX_CHARS - 3] + "..."
+            banner_text = banner_text[: BANNER_MAX_CHARS - 3] + "..."
 
         return banner_text
     except Exception as e:
@@ -413,4 +408,3 @@ def build_banner_payload(
         read=read,
         created_at=created_at,
     )
-

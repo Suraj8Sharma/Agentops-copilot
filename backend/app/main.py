@@ -16,8 +16,14 @@
 """
 
 import logging
+import sys
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
+
+if sys.platform == "win32":
+    import asyncio
+
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import FastAPI
 
