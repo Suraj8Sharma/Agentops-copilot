@@ -55,7 +55,8 @@ void main() {
   });
 
   testWidgets('shows submitting then submitted state', (tester) async {
-    TaskService.createTaskOverride = (input) async => submittedTask(input);
+    final completer = Completer<AppTask>();
+    TaskService.createTaskOverride = (_) => completer.future;
     await tester.pumpWidget(composer());
     await tester.enterText(
       find.byKey(const Key('task-input')),
@@ -67,6 +68,9 @@ void main() {
     expect(find.text('Submitting...'), findsOneWidget);
     expect(find.text('Submitting your task'), findsOneWidget);
 
+    completer.complete(
+      submittedTask('Prepare a summary of my unread emails'),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Task submitted'), findsOneWidget);
     expect(
