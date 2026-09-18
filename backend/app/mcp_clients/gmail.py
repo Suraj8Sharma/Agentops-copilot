@@ -591,8 +591,10 @@ def _call_gmail_send(
                 "tool_name": "gmail.send_message",
                 "mcp_server": "gmail",
                 "error_code": "INSUFFICIENT_SCOPE",
-                "message": "insufficient scope — user must reconnect Google with mail-send permission",
-            },  # noqa: E501
+                "message": (
+                    "insufficient scope — user must reconnect Google with mail-send permission"
+                ),
+            },
             latency_ms=latency_ms,
         )
         return {

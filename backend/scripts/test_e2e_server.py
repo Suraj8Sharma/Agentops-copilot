@@ -64,11 +64,13 @@ def run_test():
                 break
 
         print(
-            "\nTest finished! If it reached 'awaiting_approval' or 'completed', the LLM successfully created the plan."
-        )  # noqa: E501
+            "\nTest finished! If it reached 'awaiting_approval' or 'completed', "
+            "the LLM successfully created the plan."
+        )
         print(
-            "Check your Supabase Dashboard (tables: tasks, task_plans, execution_logs, llm_usage_logs) to see the results!"
-        )  # noqa: E501
+            "Check your Supabase Dashboard (tables: tasks, task_plans, execution_logs, "
+            "llm_usage_logs) to see the results!"
+        )
 
 
 if __name__ == "__main__":
