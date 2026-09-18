@@ -12,3 +12,4 @@ langgraph-checkpoint-postgres
 psycopg[binary]
 groq
 google-genai
+apscheduler>=3.10,<4

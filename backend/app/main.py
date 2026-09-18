@@ -27,7 +27,7 @@ if sys.platform == "win32":
 
 from fastapi import FastAPI
 
-from app.api.routers import approvals, auth, health, me, oauth, tasks
+from app.api.routers import approvals, auth, digests, health, me, oauth, tasks
 from app.db.supabase_client import probe_connection
 
 logging.basicConfig(
@@ -47,10 +47,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("AgentOps Copilot API starting up.")
     probe_connection()
     from app.agents.runner import checkpointer_lifespan
+    from app.jobs.digest_job import start_scheduler, stop_scheduler
 
+    scheduler = start_scheduler()
     async with checkpointer_lifespan():
         logger.info("Startup complete - server ready.")
         yield
+    stop_scheduler(scheduler)
     logger.info("AgentOps Copilot API shutting down.")
 
 
@@ -73,3 +76,4 @@ app.include_router(me.router)
 app.include_router(tasks.router)
 app.include_router(oauth.router)
 app.include_router(approvals.router)
+app.include_router(digests.router)
