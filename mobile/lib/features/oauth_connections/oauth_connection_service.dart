@@ -49,7 +49,7 @@ class OAuthConnectionService {
     if (response.statusCode == 200) {
       final decoded = jsonDecode(response.body);
       final list = decoded['connections'] as List<dynamic>? ?? [];
-      
+
       return list.map((e) {
         final map = e as Map<String, dynamic>;
         return _fromJson(map);
@@ -62,7 +62,7 @@ class OAuthConnectionService {
   static OAuthConnectionModel _fromJson(Map<String, dynamic> json) {
     final providerStr = json['provider'] as String;
     final statusStr = json['status'] as String?;
-    
+
     OAuthProvider provider;
     switch (providerStr) {
       case 'google_calendar':
@@ -111,7 +111,7 @@ class OAuthConnectionService {
     if (json['connected_at'] != null) {
       connectedAt = DateTime.tryParse(json['connected_at']);
     }
-    
+
     DateTime? expiresAt;
     if (json['expires_at'] != null) {
       expiresAt = DateTime.tryParse(json['expires_at']);
@@ -186,7 +186,7 @@ class OAuthConnectionService {
     // Wait, the connect flow redirects the user to the browser!
     // The screen only triggers the flow. It can use url_launcher.
     // "Tapping "connect" on a provider starts the real consent redirect via GET /oauth/{provider}/connect."
-    
+
     var token = await _getToken();
     var response = await (TaskService.httpClientOverride ?? http.Client()).get(
       Uri.parse('$baseUrl/oauth/${provider.key}/connect'),
