@@ -288,13 +288,13 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: AppSpacing.md),
-          _PlanSummary(plan: plan),
+          PlanSummary(plan: plan),
           const SizedBox(height: AppSpacing.lg),
           if (plan.steps.isEmpty)
             const _EmptyPlanState()
           else
             ...plan.steps.asMap().entries.map(
-                  (entry) => _PlanStepCard(
+                  (entry) => PlanStepCard(
                     step: entry.value,
                     isLast: entry.key == plan.steps.length - 1,
                   ),
@@ -305,8 +305,8 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
   }
 }
 
-class _PlanSummary extends StatelessWidget {
-  const _PlanSummary({required this.plan});
+class PlanSummary extends StatelessWidget {
+  const PlanSummary({required this.plan});
   final MockPlan plan;
 
   @override
@@ -332,7 +332,7 @@ class _PlanSummary extends StatelessWidget {
                 ],
               ),
             ),
-            _StatusChip(
+            StatusChip(
               label: plan.status.toUpperCase(),
               color: AppColors.primary,
               backgroundColor: AppColors.primaryLight,
@@ -344,8 +344,8 @@ class _PlanSummary extends StatelessWidget {
   }
 }
 
-class _PlanStepCard extends StatelessWidget {
-  const _PlanStepCard({required this.step, required this.isLast});
+class PlanStepCard extends StatelessWidget {
+  const PlanStepCard({required this.step, required this.isLast});
   final PlanStep step;
   final bool isLast;
 
@@ -405,12 +405,12 @@ class _PlanStepCard extends StatelessWidget {
                       spacing: AppSpacing.sm,
                       runSpacing: AppSpacing.xs,
                       children: <Widget>[
-                        _StatusChip(
+                        StatusChip(
                           label: step.riskTier.label,
                           color: step.riskTier.color,
                           backgroundColor: step.riskTier.background,
                         ),
-                        _StatusChip(
+                        StatusChip(
                           label: status.label,
                           color: status.color,
                           backgroundColor: status.backgroundColor,
@@ -447,8 +447,8 @@ class _PlanStepCard extends StatelessWidget {
   }
 }
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
+class StatusChip extends StatelessWidget {
+  const StatusChip({
     required this.label,
     required this.color,
     required this.backgroundColor,
