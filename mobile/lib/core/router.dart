@@ -57,7 +57,7 @@ class AppRouter {
       case AppRoutes.onboarding:
         return _page(const OnboardingScreen(), settings);
       case AppRoutes.home:
-        return _page(HomeScreen(), settings);
+        return _page(const HomeScreen(), settings);
       case AppRoutes.taskComposer:
         return _page(const TaskComposerScreen(), settings);
       case AppRoutes.planView:

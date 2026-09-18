@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../core/router.dart';
 import '../../core/theme.dart';
+import 'task_service.dart';
 
-/// Task data mirrors the fields needed by the future GET /tasks response.
-class MockTask {
-  const MockTask({
+class AppTask {
+  const AppTask({
     required this.id,
     required this.inputType,
     required this.rawInput,
@@ -22,6 +22,41 @@ class MockTask {
   final TaskStatus status;
   final DateTime createdAt;
   final DateTime? completedAt;
+
+  factory AppTask.fromJson(Map<String, dynamic> json) {
+    TaskStatus parseStatus(String s) {
+      switch (s) {
+        case 'submitted':
+          return TaskStatus.submitted;
+        case 'planning':
+          return TaskStatus.planning;
+        case 'awaiting_approval':
+          return TaskStatus.awaitingApproval;
+        case 'executing':
+          return TaskStatus.executing;
+        case 'completed':
+          return TaskStatus.completed;
+        case 'failed':
+          return TaskStatus.failed;
+        case 'cancelled':
+          return TaskStatus.cancelled;
+        default:
+          return TaskStatus.submitted;
+      }
+    }
+
+    return AppTask(
+      id: json['id'] as String,
+      inputType: json['input_type'] as String,
+      rawInput: json['raw_input'] as String? ?? '',
+      transcriptionText: json['transcription_text'] as String?,
+      status: parseStatus(json['status'] as String),
+      createdAt: DateTime.parse(json['created_at'] as String),
+      completedAt: json['completed_at'] != null
+          ? DateTime.parse(json['completed_at'] as String)
+          : null,
+    );
+  }
 }
 
 enum TaskStatus {
@@ -108,64 +143,27 @@ extension TaskStatusPresentation on TaskStatus {
   }
 }
 
-final List<MockTask> mockTasks = <MockTask>[
-  MockTask(
-    id: 'task-submitted',
-    inputType: 'text',
-    rawInput: 'Find the latest project brief and summarize it',
-    status: TaskStatus.submitted,
-    createdAt: DateTime(2026, 8, 27, 9, 0),
-  ),
-  MockTask(
-    id: 'task-planning',
-    inputType: 'text',
-    rawInput: 'Prepare a weekly team update from my calendar',
-    status: TaskStatus.planning,
-    createdAt: DateTime(2026, 8, 27, 8, 45),
-  ),
-  MockTask(
-    id: 'task-awaiting-approval',
-    inputType: 'text',
-    rawInput: 'Send the revised launch plan to the team',
-    status: TaskStatus.awaitingApproval,
-    createdAt: DateTime(2026, 8, 27, 8, 30),
-  ),
-  MockTask(
-    id: 'task-executing',
-    inputType: 'voice',
-    rawInput: '',
-    transcriptionText: 'Create an issue for the onboarding bug',
-    status: TaskStatus.executing,
-    createdAt: DateTime(2026, 8, 27, 8, 15),
-  ),
-  MockTask(
-    id: 'task-completed',
-    inputType: 'text',
-    rawInput: 'Add the design review to my calendar',
-    status: TaskStatus.completed,
-    createdAt: DateTime(2026, 8, 26, 16, 0),
-    completedAt: DateTime(2026, 8, 26, 16, 2),
-  ),
-  MockTask(
-    id: 'task-failed',
-    inputType: 'text',
-    rawInput: 'Find an available room for tomorrow',
-    status: TaskStatus.failed,
-    createdAt: DateTime(2026, 8, 26, 15, 30),
-  ),
-  MockTask(
-    id: 'task-cancelled',
-    inputType: 'text',
-    rawInput: 'Draft a reply to the vendor email',
-    status: TaskStatus.cancelled,
-    createdAt: DateTime(2026, 8, 26, 14, 0),
-  ),
-];
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
-class HomeScreen extends StatelessWidget {
-  HomeScreen({super.key, List<MockTask>? tasks}) : tasks = tasks ?? mockTasks;
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
-  final List<MockTask> tasks;
+class _HomeScreenState extends State<HomeScreen> {
+  late Future<List<AppTask>> _tasksFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  void _fetchData() {
+    setState(() {
+      _tasksFuture = TaskService.fetchTasks();
+    });
+  }
 
   void _openTaskComposer(BuildContext context) {
     Navigator.of(context).pushNamed(AppRoutes.taskComposer);
@@ -199,16 +197,69 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.lg),
               Expanded(
-                child: tasks.isEmpty
-                    ? const _EmptyTaskState()
-                    : ListView.separated(
+                child: FutureBuilder<List<AppTask>>(
+                  future: _tasksFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: AppSpacing.md),
+                            Text(
+                              'Waking up backend...',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      );
+                    } else if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.error_outline,
+                                size: AppSpacing.xxl, color: AppColors.error),
+                            const SizedBox(height: AppSpacing.md),
+                            Text('Failed to load tasks',
+                                style: Theme.of(context).textTheme.titleLarge),
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              snapshot.error.toString(),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            ElevatedButton(
+                              onPressed: _fetchData,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      );
+                    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return const _EmptyTaskState();
+                    }
+
+                    final tasks = snapshot.data!;
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        _fetchData();
+                        await _tasksFuture;
+                      },
+                      child: ListView.separated(
                         key: const Key('home-task-list'),
+                        physics: const AlwaysScrollableScrollPhysics(),
                         itemCount: tasks.length,
                         separatorBuilder: (_, __) =>
                             const SizedBox(height: AppSpacing.sm),
                         itemBuilder: (context, index) =>
                             _TaskTile(task: tasks[index]),
                       ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -220,7 +271,7 @@ class HomeScreen extends StatelessWidget {
 
 class _TaskTile extends StatelessWidget {
   const _TaskTile({required this.task});
-  final MockTask task;
+  final AppTask task;
 
   String get displayInput => task.rawInput.isNotEmpty
       ? task.rawInput
