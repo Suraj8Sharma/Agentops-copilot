@@ -9,7 +9,7 @@ Test map vs. spec acceptance criteria (d16_github_mcp_client_spec.md §9):
   test_github_session_reused_across_calls              -> AC-4  session ID reuse
   test_github_session_reinit_on_rejection              -> AC-4  re-init on rejection
   test_github_notifications_initialized_sent           -> AC-5  notifications/initialized
-  test_github_401_returns_auth_expired_no_retry        -> AC-6  401 → AUTH_EXPIRED
+  test_oauth_revoked_access_returns_clean_error        -> AC-6  401 → AUTH_EXPIRED
   test_github_create_issue_idempotency_precheck        -> AC-7  idempotency check
   test_github_execution_log_stub_present               -> AC-8  execution_logs stub
   test_github_429_returns_rate_limited                  -> AC-9a error taxonomy
@@ -321,7 +321,7 @@ def test_github_notifications_initialized_sent():
 # ---------------------------------------------------------------------------
 
 
-def test_github_401_returns_auth_expired_no_retry():
+def test_oauth_revoked_access_returns_clean_error():
     """A 401 returns AUTH_EXPIRED error, no retry attempted."""
     from app.mcp_clients.github import _session_cache, call
 
