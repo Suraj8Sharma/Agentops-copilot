@@ -98,7 +98,11 @@ def test_send_push_does_not_log_raw_token(mock_supabase, mock_messaging_send, ca
 class MockUser:
     id = "test-user-id"
 
-app.dependency_overrides[get_current_user] = lambda: MockUser()
+@pytest.fixture(autouse=True)
+def override_auth():
+    app.dependency_overrides[get_current_user] = lambda: MockUser()
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 client = TestClient(app)
 
