@@ -27,7 +27,7 @@ if sys.platform == "win32":
 
 from fastapi import FastAPI
 
-from app.api.routers import approvals, auth, digests, health, me, oauth, tasks
+from app.api.routers import approvals, auth, digests, health, me, oauth, tasks, notifications
 from app.db.supabase_client import probe_connection
 
 logging.basicConfig(
@@ -77,3 +77,5 @@ app.include_router(tasks.router)
 app.include_router(oauth.router)
 app.include_router(approvals.router)
 app.include_router(digests.router)
+app.include_router(notifications.router)
+
