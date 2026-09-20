@@ -76,7 +76,7 @@ class AuthService {
   static Future<String?> _refreshAndGet() async {
     try {
       await refreshSession();
-      return getAccessToken();
+      return await getAccessToken();
     } catch (_) {
       return null;
     }
