@@ -164,7 +164,7 @@ class TestCalendarExecutionLogs:
         http_resp = _json_response(200, self.MCP_SUCCESS_BODY)
 
         with (
-            patch("app.mcp_clients.calendar.supabase", mock_supabase),
+            patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
@@ -194,7 +194,7 @@ class TestCalendarExecutionLogs:
         http_resp = _json_response(200, self.MCP_SUCCESS_BODY)
 
         with (
-            patch("app.mcp_clients.calendar.supabase", mock_supabase),
+            patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
@@ -221,7 +221,7 @@ class TestCalendarExecutionLogs:
         http_resp = _json_response(401)
 
         with (
-            patch("app.mcp_clients.calendar.supabase", mock_supabase),
+            patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
@@ -247,7 +247,7 @@ class TestCalendarExecutionLogs:
         http_resp = _json_response(200, self.MCP_SUCCESS_BODY)
 
         with (
-            patch("app.mcp_clients.calendar.supabase", mock_supabase),
+            patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar

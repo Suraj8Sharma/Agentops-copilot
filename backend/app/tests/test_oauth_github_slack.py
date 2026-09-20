@@ -87,7 +87,7 @@ def mock_settings():
 @pytest.fixture()
 def mock_state():
     """Bypass the CSRF state verification for all tests that use it."""
-    with patch("app.api.routers.oauth._verify_state_token", return_value=True):
+    with patch("app.api.routers.oauth._verify_and_extract_user_id", return_value="test-user-uuid-1234"):
         yield
 
 
@@ -405,7 +405,7 @@ def test_callback_missing_code_returns_400(mock_settings, mock_state) -> None:
     assert "missing" in resp.json()["detail"].lower()
 
 
-def test_callback_user_denied_consent_returns_400(mock_settings) -> None:
+def test_callback_user_denied_consent_returns_400(mock_settings, mock_state) -> None:
     """If the user clicks 'Deny', provider sends error=access_denied → 400."""
     client = _authed_client()
     resp = client.get("/oauth/github/callback?error=access_denied&state=mock_state")

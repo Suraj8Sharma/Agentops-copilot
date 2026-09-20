@@ -77,7 +77,7 @@ def mock_supabase_table():
 
 @pytest.fixture
 def mock_verify_state():
-    with patch("app.api.routers.oauth._verify_state_token", return_value=True) as mock_verify:
+    with patch("app.api.routers.oauth._verify_and_extract_user_id", return_value="test-user-uuid-1234") as mock_verify:
         yield mock_verify
 
 
@@ -181,7 +181,7 @@ def test_oauth_callback_invalid_state_rejected() -> None:
     assert "Invalid state token" in response.json()["detail"]
 
 
-def test_oauth_callback_consent_denied() -> None:
+def test_oauth_callback_consent_denied(mock_verify_state) -> None:
     """Asserts that if the user clicks 'Cancel' on Google consent, we handle it."""
     client = _authed_client()
 

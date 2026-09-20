@@ -32,7 +32,7 @@ import httpx
 from cryptography.fernet import Fernet
 
 from app.core.config import settings
-from app.db.supabase_client import supabase, supabase_admin
+from app.db.supabase_client import supabase_admin
 
 logger = logging.getLogger(__name__)
 
