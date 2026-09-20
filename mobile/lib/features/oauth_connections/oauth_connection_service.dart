@@ -188,8 +188,16 @@ class OAuthConnectionService {
     // "Tapping "connect" on a provider starts the real consent redirect via GET /oauth/{provider}/connect."
 
     var token = await _getToken();
+    
+    // The backend groups Google Calendar and Gmail under a single "google" provider
+    // for the OAuth consent flow, which requests scopes for both.
+    String connectKey = provider.key;
+    if (provider == OAuthProvider.googleCalendar || provider == OAuthProvider.gmail) {
+      connectKey = 'google';
+    }
+
     var response = await (TaskService.httpClientOverride ?? http.Client()).get(
-      Uri.parse('$baseUrl/oauth/${provider.key}/connect'),
+      Uri.parse('$baseUrl/oauth/$connectKey/connect'),
       headers: {
         if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
@@ -199,7 +207,7 @@ class OAuthConnectionService {
     if (response.statusCode == 401 && TaskService.refreshAccessTokenProvider != null) {
       token = await TaskService.refreshAccessTokenProvider!();
       response = await (TaskService.httpClientOverride ?? http.Client()).get(
-        Uri.parse('$baseUrl/oauth/${provider.key}/connect'),
+        Uri.parse('$baseUrl/oauth/$connectKey/connect'),
         headers: {
           if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',

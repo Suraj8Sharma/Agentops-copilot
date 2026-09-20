@@ -32,7 +32,7 @@ import httpx
 from cryptography.fernet import Fernet
 
 from app.core.config import settings
-from app.db.supabase_client import supabase
+from app.db.supabase_client import supabase_admin
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +58,10 @@ def _fetch_user_token(user_id: str) -> str | None:
     """Fetch and decrypt the user's Google OAuth access token from oauth_connections."""
     try:
         result = (
-            supabase.table("oauth_connections")
+            supabase_admin.table("oauth_connections")
             .select("access_token")
             .eq("user_id", user_id)
-            .eq("provider", "google")
+            .eq("provider", "google_calendar")
             .limit(1)
             .execute()
         )
@@ -109,7 +109,7 @@ def _log_event_calendar(
             row["step_id"] = step_id
         if latency_ms is not None:
             row["latency_ms"] = latency_ms
-        supabase.table("execution_logs").insert(row).execute()
+        supabase_admin.table("execution_logs").insert(row).execute()
     except Exception:
         logger.warning(
             "execution_logs write failed [mcp_calendar task_id=%s event_type=%s]",

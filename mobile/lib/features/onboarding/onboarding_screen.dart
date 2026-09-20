@@ -38,7 +38,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void initState() {
     super.initState();
     if (widget.onboardingCompleted) {
-      _splashTimer = Timer(Duration.zero, _goToHome);
+      _splashTimer = Timer(Duration.zero, _goToSignIn);
     } else {
       _splashTimer = Timer(_splashDuration, () {
         if (mounted) setState(() => _showSplash = false);
@@ -53,17 +53,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
-  void _goToHome() {
+  void _goToSignIn() {
     if (!mounted || _hasNavigated) return;
     _hasNavigated = true;
-    Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+    Navigator.of(context).pushReplacementNamed(AppRoutes.signIn);
   }
 
   void _next() {
-    if (_pageIndex == _slides.length - 1) return _goToHome();
+    if (_pageIndex == _slides.length - 1) return _goToSignIn();
     _pageController.nextPage(
         duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -78,7 +79,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                      onPressed: _goToHome, child: const Text('Skip')),
+                      onPressed: _goToSignIn, child: const Text('Skip')),
                 ),
                 Expanded(
                   child: PageView.builder(
