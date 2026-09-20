@@ -11,6 +11,8 @@ venv/
 .ruff_cache/
 htmlcov/
 .coverage
+firebase-service-account.json    
+ 
 
 # --- Flutter / mobile ---
 mobile/.dart_tool/
