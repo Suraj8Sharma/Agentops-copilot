@@ -87,7 +87,10 @@ def mock_settings():
 @pytest.fixture()
 def mock_state():
     """Bypass the CSRF state verification for all tests that use it."""
-    with patch("app.api.routers.oauth._verify_and_extract_user_id", return_value="test-user-uuid-1234"):
+    with patch(
+        "app.api.routers.oauth._verify_and_extract_user_id",
+        return_value="test-user-uuid-1234"
+    ):
         yield
 
 
