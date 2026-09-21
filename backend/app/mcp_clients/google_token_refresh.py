@@ -50,12 +50,19 @@ _EXPIRY_BUFFER = timedelta(seconds=300)  # 5 minutes
 _TIMEOUT = 10.0
 
 
-def _fernet() -> Fernet:
-    return Fernet(settings.ENCRYPTION_KEY.encode())
+def _fernet() -> Fernet | None:
+    if not settings.ENCRYPTION_KEY:
+        return None
+    try:
+        return Fernet(settings.ENCRYPTION_KEY.encode())
+    except Exception:
+        return None
 
 
-def _decrypt(fernet: Fernet, value: str) -> str:
+def _decrypt(fernet: Fernet | None, value: str) -> str:
     """Decrypt a Fernet-encrypted value, falling back to raw on failure."""
+    if not fernet:
+        return value
     try:
         return fernet.decrypt(value.encode()).decode()
     except Exception:
@@ -63,7 +70,9 @@ def _decrypt(fernet: Fernet, value: str) -> str:
         return value
 
 
-def _encrypt(fernet: Fernet, value: str) -> str:
+def _encrypt(fernet: Fernet | None, value: str) -> str:
+    if not fernet:
+        return value
     return fernet.encrypt(value.encode()).decode()
 
 
