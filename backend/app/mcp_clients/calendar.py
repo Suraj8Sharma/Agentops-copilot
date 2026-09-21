@@ -29,10 +29,9 @@ import time
 from typing import Any
 
 import httpx
-from cryptography.fernet import Fernet
 
-from app.core.config import settings
 from app.db.supabase_client import supabase_admin
+from app.mcp_clients.google_token_refresh import get_valid_google_token
 
 logger = logging.getLogger(__name__)
 
@@ -55,34 +54,18 @@ _TIMEOUT = 15.0
 
 
 def _fetch_user_token(user_id: str) -> str | None:
-    """Fetch and decrypt the user's Google OAuth access token from oauth_connections."""
-    try:
-        result = (
-            supabase_admin.table("oauth_connections")
-            .select("access_token")
-            .eq("user_id", user_id)
-            .eq("provider", "google_calendar")
-            .limit(1)
-            .execute()
-        )
-        if not result.data:
-            logger.warning("calendar: no Google token found for user_id=%s", user_id)
-            return None
+    """Return a valid (possibly auto-refreshed) Google OAuth access token.
 
-        encrypted_token = result.data[0]["access_token"]
-        try:
-            fernet = Fernet(settings.ENCRYPTION_KEY.encode())
-            return fernet.decrypt(encrypted_token.encode()).decode()
-        except Exception:
-            logger.debug("calendar: Fernet decrypt failed, using raw token for user_id=%s", user_id)
-            return encrypted_token
-    except Exception:
-        logger.error(
-            "calendar: failed to fetch token for user_id=%s",
-            user_id,
-            exc_info=True,
-        )
-        return None
+    Delegates to ``google_token_refresh.get_valid_google_token`` which:
+    - Returns the stored token immediately if it is not yet expired.
+    - Calls Google's token endpoint to refresh it if it is expired or within
+      5 minutes of expiry, persists the new token to the DB, and returns it.
+    - Returns ``None`` if no token exists or the refresh fails (revoked, etc.).
+    """
+    token = get_valid_google_token(user_id, "google_calendar")
+    if token is None:
+        logger.warning("calendar: no valid Google token for user_id=%s", user_id)
+    return token
 
 
 # ---------------------------------------------------------------------------

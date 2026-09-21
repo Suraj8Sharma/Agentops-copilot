@@ -52,9 +52,45 @@ class AuthService {
     return prefs.getString(_keyRefreshToken);
   }
 
+  /// Decodes the JWT payload (no network call) and returns true if the token
+  /// is expired or within [bufferSeconds] of expiry.
+  ///
+  /// Returns true (treat as expired) on any parse failure so the caller
+  /// falls through to the refresh path rather than using a bad token.
+  static bool _isTokenExpired(String jwt, {int bufferSeconds = 60}) {
+    try {
+      final parts = jwt.split('.');
+      if (parts.length != 3) return true;
+
+      // JWT payload is base64url-encoded (no padding).
+      final payload = parts[1];
+      // Normalise to standard base64 by re-adding padding.
+      final normalised = base64.normalize(payload);
+      final decoded = utf8.decode(base64Url.decode(normalised));
+      final map = jsonDecode(decoded) as Map<String, dynamic>;
+
+      final exp = map['exp'];
+      if (exp == null) return false; // no expiry claim → treat as valid
+
+      final expiresAt =
+          DateTime.fromMillisecondsSinceEpoch((exp as int) * 1000, isUtc: true);
+      return DateTime.now().toUtc().isAfter(
+            expiresAt.subtract(Duration(seconds: bufferSeconds)),
+          );
+    } catch (_) {
+      return true; // parse failure → assume expired
+    }
+  }
+
+  /// Returns true only if a non-empty, non-expired access token is stored.
+  ///
+  /// Uses [_isTokenExpired] for an offline JWT exp-claim check, so no network
+  /// call is needed here. A 401 retry in TaskService is still the safety net
+  /// for clock-skew edge cases.
   static Future<bool> isLoggedIn() async {
     final token = await getAccessToken();
-    return token != null && token.isNotEmpty;
+    if (token == null || token.isEmpty) return false;
+    return !_isTokenExpired(token);
   }
 
   // -------------------------------------------------------------------------
@@ -177,12 +213,32 @@ class AuthService {
     TaskService.refreshAccessTokenProvider = null;
   }
 
-  /// Re-attach the token providers to TaskService after a cold start,
-  /// if the user is already logged in. Call this once from [main].
+  /// Re-attach the token providers to TaskService after a cold start.
+  ///
+  /// Three cases on startup:
+  ///   1. No token stored          → do nothing (user sees sign-in screen).
+  ///   2. Token stored and valid   → wire providers immediately.
+  ///   3. Token stored but expired → attempt a silent refresh before wiring.
+  ///      If the refresh fails (revoked, no network) → clear storage so the
+  ///      user is redirected to sign-in rather than landing in a broken state.
+  ///
+  /// Call this once from [main] before [runApp].
   static Future<void> restoreSession() async {
-    if (await isLoggedIn()) {
-      TaskService.accessTokenProvider = getAccessToken;
-      TaskService.refreshAccessTokenProvider = _refreshAndGet;
+    final token = await getAccessToken();
+    if (token == null || token.isEmpty) return; // case 1
+
+    if (_isTokenExpired(token)) {
+      // case 3 — try silent refresh
+      final refreshed = await _refreshAndGet();
+      if (refreshed == null) {
+        // Refresh failed — clear tokens so app shows sign-in screen.
+        await logout();
+        return;
+      }
     }
+
+    // case 2 (or case 3 after successful refresh)
+    TaskService.accessTokenProvider = getAccessToken;
+    TaskService.refreshAccessTokenProvider = _refreshAndGet;
   }
 }
