@@ -31,12 +31,22 @@ GOOGLE_TOKEN = "ya29.test_gmail_token"
 IDEMPOTENCY_KEY = f"{PLAN_ID}:0"
 
 
+REFRESH_PATCH = "app.mcp_clients.google_token_refresh.supabase_admin"
+
+
 def _make_token_supabase(token=GOOGLE_TOKEN):
     mock = MagicMock()
     chain = MagicMock()
     chain.eq.return_value = chain
     chain.single.return_value = chain
-    chain.execute.return_value = MagicMock(data={"access_token": token} if token else None)
+    chain.limit.return_value = chain
+    chain.execute.return_value = MagicMock(
+        data=[{
+            "access_token": token,
+            "refresh_token": None,
+            "expires_at": "2099-01-01T00:00:00+00:00",
+        }] if token else []
+    )
     mock.table.return_value.select.return_value = chain
     return mock
 
@@ -83,12 +93,7 @@ def test_gmail_client_routes_send_to_gmail_api():
     """gmail.send_message must POST to GMAIL_SEND_URL, not GMAIL_MCP_URL."""
     from app.mcp_clients.gmail import GMAIL_MCP_URL, GMAIL_SEND_URL, call
 
-    chain = MagicMock()
-    chain.eq.return_value = chain
-    chain.single.return_value = chain
-    chain.execute.return_value = MagicMock(data={"access_token": GOOGLE_TOKEN})
-    mock_sb = MagicMock()
-    mock_sb.table.return_value.select.return_value = chain
+    mock_sb = _make_token_supabase()
     send_resp = _make_httpx_response(200, {"id": "msg123", "threadId": "t1"})
     posted_urls = []
 
@@ -98,6 +103,7 @@ def test_gmail_client_routes_send_to_gmail_api():
 
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
+        patch(REFRESH_PATCH, mock_sb),
         patch("httpx.post", side_effect=post_side),
     ):
         result = call(
@@ -126,6 +132,7 @@ def test_gmail_client_routes_read_to_mcp():
 
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
+        patch(REFRESH_PATCH, mock_sb),
         patch("httpx.post", side_effect=post_side),
     ):
         result = call("gmail.list_messages", {"query": "is:unread"}, USER_ID, IDEMPOTENCY_KEY)
@@ -142,6 +149,7 @@ def test_gmail_list_messages_maps_to_search_threads():
     mock_sb = _make_token_supabase()
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
+        patch(REFRESH_PATCH, mock_sb),
         patch("httpx.post", return_value=_make_httpx_mcp_success()) as mp,
     ):
         call("gmail.list_messages", {"query": "is:unread"}, USER_ID, IDEMPOTENCY_KEY)
@@ -154,12 +162,7 @@ def test_gmail_send_uses_recipient_own_token():
     from app.mcp_clients.gmail import call
 
     user_token = "ya29.user_specific_token"
-    chain = MagicMock()
-    chain.eq.return_value = chain
-    chain.single.return_value = chain
-    chain.execute.return_value = MagicMock(data={"access_token": user_token})
-    mock_sb = MagicMock()
-    mock_sb.table.return_value.select.return_value = chain
+    mock_sb = _make_token_supabase(user_token)
     captured = {}
 
     def post_side(url, **kw):
@@ -168,6 +171,7 @@ def test_gmail_send_uses_recipient_own_token():
 
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
+        patch(REFRESH_PATCH, mock_sb),
         patch("httpx.post", side_effect=post_side),
     ):
         result = call(
@@ -209,16 +213,12 @@ def test_gmail_send_403_returns_clear_reauth_error():
     """A 403 from GMAIL_SEND_URL returns a distinct insufficient-scope message."""
     from app.mcp_clients.gmail import call
 
-    chain = MagicMock()
-    chain.eq.return_value = chain
-    chain.single.return_value = chain
-    chain.execute.return_value = MagicMock(data={"access_token": GOOGLE_TOKEN})
-    mock_sb = MagicMock()
-    mock_sb.table.return_value.select.return_value = chain
+    mock_sb = _make_token_supabase()
     resp403 = _make_httpx_response(403)
     resp403.is_success = False
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
+        patch(REFRESH_PATCH, mock_sb),
         patch("httpx.post", return_value=resp403),
     ):
         result = call(
@@ -243,6 +243,7 @@ def test_gmail_draft_email_success():
     )
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
+        patch(REFRESH_PATCH, mock_sb),
         patch("httpx.post", return_value=draft_resp),
     ):
         result = call(
@@ -284,7 +285,11 @@ def test_gmail_mcp_token_missing_returns_error():
     from app.mcp_clients.gmail import call
 
     mock_sb = _make_supabase_no_token()
-    with patch("app.mcp_clients.gmail.supabase", mock_sb), patch("httpx.post") as mp:
+    with (
+        patch("app.mcp_clients.gmail.supabase", mock_sb),
+        patch(REFRESH_PATCH, mock_sb),
+        patch("httpx.post") as mp,
+    ):
         result = call("gmail.list_messages", {}, USER_ID, IDEMPOTENCY_KEY)
     mp.assert_not_called()
     assert result["status"] == "error"
@@ -299,7 +304,11 @@ def test_gmail_mcp_401_returns_error():
     mock_sb = _make_token_supabase()
     r = _make_httpx_response(401)
     r.is_success = False
-    with patch("app.mcp_clients.gmail.supabase", mock_sb), patch("httpx.post", return_value=r):
+    with (
+        patch("app.mcp_clients.gmail.supabase", mock_sb),
+        patch(REFRESH_PATCH, mock_sb),
+        patch("httpx.post", return_value=r),
+    ):
         result = call("gmail.list_messages", {}, USER_ID, IDEMPOTENCY_KEY)
     assert result["status"] == "error"
     assert "unauthorized" in result["error"]
@@ -313,7 +322,11 @@ def test_gmail_mcp_429_returns_rate_limited():
     mock_sb = _make_token_supabase()
     r = _make_httpx_response(429)
     r.is_success = False
-    with patch("app.mcp_clients.gmail.supabase", mock_sb), patch("httpx.post", return_value=r):
+    with (
+        patch("app.mcp_clients.gmail.supabase", mock_sb),
+        patch(REFRESH_PATCH, mock_sb),
+        patch("httpx.post", return_value=r),
+    ):
         result = call("gmail.list_messages", {}, USER_ID, IDEMPOTENCY_KEY)
     assert result["status"] == "rate_limited"
 
