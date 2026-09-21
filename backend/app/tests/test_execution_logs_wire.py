@@ -74,7 +74,12 @@ def _supabase_with_token(token: str) -> MagicMock:
     sel = MagicMock()
     sel.eq.return_value = sel
     sel.single.return_value = sel
-    sel.execute.return_value = MagicMock(data={"access_token": token})
+    sel.limit.return_value = sel
+    sel.execute.return_value = MagicMock(data=[{
+        "access_token": token,
+        "refresh_token": None,
+        "expires_at": "2099-01-01T00:00:00+00:00",
+    }])
     mock.table.return_value.select.return_value = sel
 
     # Insert chain (for execution_logs writes)
@@ -104,7 +109,12 @@ def _supabase_insert_raises() -> MagicMock:
     sel = MagicMock()
     sel.eq.return_value = sel
     sel.single.return_value = sel
-    sel.execute.return_value = MagicMock(data={"access_token": GOOGLE_TOKEN})
+    sel.limit.return_value = sel
+    sel.execute.return_value = MagicMock(data=[{
+        "access_token": GOOGLE_TOKEN,
+        "refresh_token": None,
+        "expires_at": "2099-01-01T00:00:00+00:00",
+    }])
     mock.table.return_value.select.return_value = sel
 
     ins = MagicMock()
@@ -165,6 +175,7 @@ class TestCalendarExecutionLogs:
 
         with (
             patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
@@ -195,6 +206,7 @@ class TestCalendarExecutionLogs:
 
         with (
             patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
@@ -222,6 +234,7 @@ class TestCalendarExecutionLogs:
 
         with (
             patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
@@ -248,6 +261,7 @@ class TestCalendarExecutionLogs:
 
         with (
             patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
@@ -284,6 +298,7 @@ class TestGmailMcpExecutionLogs:
 
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
@@ -309,6 +324,7 @@ class TestGmailMcpExecutionLogs:
 
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
@@ -333,6 +349,7 @@ class TestGmailMcpExecutionLogs:
 
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
@@ -357,6 +374,7 @@ class TestGmailMcpExecutionLogs:
 
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
@@ -408,6 +426,7 @@ class TestGmailSendExecutionLogs:
 
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
@@ -432,6 +451,7 @@ class TestGmailSendExecutionLogs:
 
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
@@ -457,6 +477,7 @@ class TestGmailSendExecutionLogs:
 
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
+            patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
             patch("httpx.post", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
