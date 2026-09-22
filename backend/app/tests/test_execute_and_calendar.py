@@ -33,6 +33,11 @@ PLAN_ID = str(uuid.uuid4())
 STEP_ID = str(uuid.uuid4())
 GOOGLE_TOKEN = "ya29.test_google_token"
 
+# Patch target for the supabase_admin used inside google_token_refresh.
+# Every test that exercises the calendar token fetch must include this patch
+# alongside "app.mcp_clients.calendar.supabase_admin".
+REFRESH_PATCH = "app.mcp_clients.google_token_refresh.supabase_admin"
+
 
 def _make_state(
     plan: list | None = None,
@@ -89,14 +94,21 @@ def _make_supabase_mock():
             eq_mock = MagicMock()
             eq_mock.execute.return_value = MagicMock(data=[])
             u.eq.return_value = eq_mock
+            u.in_.return_value = eq_mock
             return u
 
         def select_side_effect(*args, **kwargs):
-            # oauth_connections fetch
+            # oauth_connections fetch — return a token that expires far in the
+            # future so the expiry check in google_token_refresh passes without
+            # triggering a real refresh network call.
             s = MagicMock()
             s.eq.return_value = s
-            s.single.return_value = s
-            s.execute.return_value = MagicMock(data={"access_token": GOOGLE_TOKEN})
+            s.limit.return_value = s
+            s.execute.return_value = MagicMock(data=[{
+                "access_token": GOOGLE_TOKEN,
+                "refresh_token": None,
+                "expires_at": "2099-01-01T00:00:00+00:00",
+            }])
             return s
 
         def insert_side_effect(payload):
@@ -153,7 +165,8 @@ def test_execute_node_runs_low_risk_calendar_tool():
 
     with (
         patch("app.agents.nodes.supabase_admin", mock_supabase),
-        patch("app.mcp_clients.calendar.supabase", mock_supabase),
+        patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+        patch(REFRESH_PATCH, mock_supabase),
         patch("httpx.post", return_value=mock_response),
     ):
         result = execute(state)
@@ -199,7 +212,8 @@ def test_mcp_calendar_client_idempotency():
     mock_response = _make_httpx_response()
 
     with (
-        patch("app.mcp_clients.calendar.supabase", mock_supabase),
+        patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+        patch(REFRESH_PATCH, mock_supabase),
         patch("httpx.post", return_value=mock_response) as mock_post,
     ):
         idempotency_key = f"{PLAN_ID}:0"
@@ -229,7 +243,8 @@ def test_execution_logs_latency():
     mock_response = _make_httpx_response()
 
     with (
-        patch("app.mcp_clients.calendar.supabase", mock_supabase),
+        patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+        patch(REFRESH_PATCH, mock_supabase),
         patch("httpx.post", return_value=mock_response),
     ):
         result = call(
@@ -299,8 +314,8 @@ def test_execute_marks_task_failed_on_mcp_error():
         def select_side_effect(*args, **kwargs):
             s = MagicMock()
             s.eq.return_value = s
-            s.single.return_value = s
-            s.execute.return_value = MagicMock(data={"access_token": GOOGLE_TOKEN})
+            s.limit.return_value = s
+            s.execute.return_value = MagicMock(data=[{"access_token": GOOGLE_TOKEN}])
             return s
 
         t.update.side_effect = update_side_effect
@@ -312,7 +327,8 @@ def test_execute_marks_task_failed_on_mcp_error():
 
     with (
         patch("app.agents.nodes.supabase_admin", mock_supabase),
-        patch("app.mcp_clients.calendar.supabase", mock_supabase),
+        patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+        patch(REFRESH_PATCH, mock_supabase),
         patch("httpx.post", return_value=error_response),
         patch("time.sleep"),
     ):  # skip backoff in tests
@@ -353,7 +369,8 @@ def test_execute_retries_on_transient_error():
 
     with (
         patch("app.agents.nodes.supabase_admin", mock_supabase),
-        patch("app.mcp_clients.calendar.supabase", mock_supabase),
+        patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+        patch(REFRESH_PATCH, mock_supabase),
         patch("httpx.post", side_effect=httpx_side_effect),
         patch("time.sleep"),
     ):
@@ -451,15 +468,16 @@ def test_calendar_client_returns_error_on_no_token():
     mock_supabase = MagicMock()
     # Simulate no token found
     no_data = MagicMock()
-    no_data.data = None
+    no_data.data = []
     chain = MagicMock()
     chain.eq.return_value = chain
-    chain.single.return_value = chain
+    chain.limit.return_value = chain
     chain.execute.return_value = no_data
     mock_supabase.table.return_value.select.return_value = chain
 
     with (
-        patch("app.mcp_clients.calendar.supabase", mock_supabase),
+        patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+        patch(REFRESH_PATCH, mock_supabase),
         patch("httpx.post") as mock_post,
     ):
         result = call("calendar.list_events", {}, USER_ID, f"{PLAN_ID}:0")
@@ -483,7 +501,8 @@ def test_calendar_client_handles_401_unauthorized():
     resp_401.is_success = False
 
     with (
-        patch("app.mcp_clients.calendar.supabase", mock_supabase),
+        patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+        patch(REFRESH_PATCH, mock_supabase),
         patch("httpx.post", return_value=resp_401),
     ):
         result = call("calendar.list_events", {}, USER_ID, f"{PLAN_ID}:0")
@@ -506,7 +525,8 @@ def test_calendar_client_handles_429_rate_limited():
     resp_429.is_success = False
 
     with (
-        patch("app.mcp_clients.calendar.supabase", mock_supabase),
+        patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+        patch(REFRESH_PATCH, mock_supabase),
         patch("httpx.post", return_value=resp_429),
     ):
         result = call("calendar.list_events", {}, USER_ID, f"{PLAN_ID}:0")
@@ -528,7 +548,8 @@ def test_calendar_client_handles_timeout():
     mock_supabase = _make_supabase_mock()
 
     with (
-        patch("app.mcp_clients.calendar.supabase", mock_supabase),
+        patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
+        patch(REFRESH_PATCH, mock_supabase),
         patch("httpx.post", side_effect=httpx_mod.TimeoutException("timed out")),
     ):
         result = call("calendar.list_events", {}, USER_ID, f"{PLAN_ID}:0")

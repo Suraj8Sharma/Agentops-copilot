@@ -178,36 +178,41 @@ def _build_state_token(user_id: str, provider: str) -> str:
     return f"{payload}.{signature}"
 
 
-def _verify_state_token(state: str, user_id: str, provider: str) -> bool:
-    """Verify the signed state token for CSRF protection.
+def _verify_and_extract_user_id(state: str, provider: str) -> str:
+    """Verify the signed state token for CSRF protection and extract the user_id.
 
     Args:
         state:    The state token passed back from Google.
-        user_id:  The authenticated user's Supabase UUID.
         provider: The OAuth provider string (e.g. ``"google"``).
 
     Returns:
-        True if the state is valid and belongs to this user/provider.
+        The authenticated user's Supabase UUID.
+        
+    Raises:
+        ValueError: If the state token is invalid, tampered with, or for the wrong provider.
     """
     if not state or "." not in state:
-        return False
+        raise ValueError("Malformed state token")
 
     payload, provided_signature = state.rsplit(".", 1)
 
     # Payload format: user_id:provider:nonce
     parts = payload.split(":")
     if len(parts) != 3:
-        return False
+        raise ValueError("Malformed state payload")
 
     token_user_id, token_provider, _ = parts
-    if token_user_id != user_id or token_provider != provider:
-        return False
+    if token_provider != provider:
+        raise ValueError("Provider mismatch")
 
     secret = settings.SUPABASE_JWT_SECRET.encode()
     expected_signature = hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()[:32]
 
     # Use hmac.compare_digest to prevent timing attacks
-    return hmac.compare_digest(provided_signature, expected_signature)
+    if not hmac.compare_digest(provided_signature, expected_signature):
+        raise ValueError("Invalid signature")
+        
+    return token_user_id
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +320,6 @@ def oauth_connect(
 )
 def oauth_callback(
     provider: str,
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     state: str = Query(..., description="CSRF state token"),
     code: Optional[str] = Query(None, description="Authorization code from provider"),
     error: Optional[str] = Query(None, description="Error if user denied consent"),
@@ -329,9 +333,18 @@ def oauth_callback(
             detail=f"Unknown OAuth provider: {provider!r}. Supported: google.",
         )
 
+    try:
+        user_id = _verify_and_extract_user_id(state, provider)
+    except ValueError as e:
+        logger.warning("Invalid OAuth state token during callback: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid state token. Possible CSRF attempt.",
+        )
+
     if error:
         logger.warning(
-            "User denied consent during OAuth flow: user_id=%s, error=%s", current_user.id, error
+            "User denied consent during OAuth flow: user_id=%s, error=%s", user_id, error
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"OAuth authorization failed: {error}"
@@ -340,13 +353,6 @@ def oauth_callback(
     if not code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Authorization code is missing."
-        )
-
-    if not _verify_state_token(state, user_id=current_user.id, provider=provider):
-        logger.warning("Invalid OAuth state token during callback: user_id=%s", current_user.id)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid state token. Possible CSRF attempt.",
         )
 
     # -------------------------------------------------------------------------
@@ -361,7 +367,7 @@ def oauth_callback(
         logger.error(
             "OAuth credentials not configured for provider=%s (user_id=%s)",
             provider,
-            current_user.id,
+            user_id,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -389,7 +395,7 @@ def oauth_callback(
         logger.error(
             "Network error during token exchange for provider=%s user_id=%s: %s",
             provider,
-            current_user.id,
+            user_id,
             exc,
         )
         raise HTTPException(
@@ -422,7 +428,7 @@ def oauth_callback(
                 "Google token exchange failed: status=%d body=%r user_id=%s",
                 response.status_code,
                 token_data,
-                current_user.id,
+                user_id,
             )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -437,7 +443,7 @@ def oauth_callback(
             logger.warning(
                 "GitHub token exchange failed (expected — bad/expired/reused code): "
                 "user_id=%s error=%r description=%r",
-                current_user.id,
+                user_id,
                 err_code,
                 err_desc,
             )
@@ -456,7 +462,7 @@ def oauth_callback(
             logger.warning(
                 "Slack token exchange failed (expected — bad/expired/reused code): "
                 "user_id=%s error=%r",
-                current_user.id,
+                user_id,
                 err_code,
             )
             raise HTTPException(
@@ -481,7 +487,7 @@ def oauth_callback(
                 "Provider=%s returned no access_token despite apparent success: "
                 "user_id=%s body_keys=%r",
                 provider,
-                current_user.id,
+                user_id,
                 list(token_data.keys()),
             )
             raise HTTPException(
@@ -543,7 +549,7 @@ def oauth_callback(
 
         records = [
             {
-                "user_id": current_user.id,
+                "user_id": user_id,
                 "provider": p,
                 "access_token": encrypted_access,
                 "refresh_token": encrypted_refresh,
@@ -563,7 +569,7 @@ def oauth_callback(
 
         records = [
             {
-                "user_id": current_user.id,
+                "user_id": user_id,
                 "provider": "github",
                 "access_token": encrypted_access,
                 "refresh_token": None,
@@ -582,7 +588,7 @@ def oauth_callback(
 
         records = [
             {
-                "user_id": current_user.id,
+                "user_id": user_id,
                 "provider": "slack",
                 "access_token": encrypted_access,
                 "refresh_token": None,
@@ -612,7 +618,7 @@ def oauth_callback(
 
     logger.info(
         "OAuth connection stored successfully: user_id=%s provider=%s",
-        current_user.id,
+        user_id,
         provider,
     )
     return {"message": "OAuth connection successful"}
@@ -772,3 +778,32 @@ def sweep_tokens(
 
     logger.info("sweep-tokens complete: scanned=%d flagged=%d", scanned, flagged)
     return {"scanned": scanned, "flagged": flagged}
+
+@router.get(
+    "/connections",
+    summary="List user OAuth connections",
+)
+def get_connections(
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> dict:
+    from app.db.supabase_client import create_client
+    service_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+    result = service_client.table("oauth_connections").select(
+        "provider, status, scopes, expires_at, connected_at"
+    ).eq("user_id", current_user.id).execute()
+    return {"connections": result.data or []}
+
+@router.delete(
+    "/{provider}",
+    summary="Disconnect OAuth provider",
+)
+def delete_connection(
+    provider: str,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> dict:
+    from app.db.supabase_client import create_client
+    service_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+    service_client.table("oauth_connections").delete().eq(
+        "user_id", current_user.id
+    ).eq("provider", provider).execute()
+    return {"message": "Disconnected"}

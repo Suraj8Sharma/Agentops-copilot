@@ -30,10 +30,9 @@ from email.mime.text import MIMEText
 from typing import Any
 
 import httpx
-from cryptography.fernet import Fernet
 
-from app.core.config import settings
 from app.db.supabase_client import supabase
+from app.mcp_clients.google_token_refresh import get_valid_google_token
 
 logger = logging.getLogger(__name__)
 
@@ -69,38 +68,21 @@ _TIMEOUT = 15.0
 
 
 def _fetch_google_token(user_id: str) -> str | None:
-    """Fetch and decrypt the user's Google OAuth access token from oauth_connections.
+    """Return a valid (possibly auto-refreshed) Google OAuth access token for Gmail.
+
+    Delegates to ``google_token_refresh.get_valid_google_token`` which:
+    - Returns the stored token immediately if it is not yet expired.
+    - Calls Google's token endpoint to refresh it if it is expired or within
+      5 minutes of expiry, persists the new token to the DB, and returns it.
+    - Returns ``None`` if no token exists or the refresh fails (revoked, etc.).
 
     Note: The callback stores Gmail tokens under provider='gmail' (not 'google'),
     since one Google consent yields two rows — 'google_calendar' and 'gmail'.
     """
-    try:
-        result = (
-            supabase.table("oauth_connections")
-            .select("access_token")
-            .eq("user_id", user_id)
-            .eq("provider", "gmail")
-            .single()
-            .execute()
-        )
-        if not result.data:
-            logger.warning("gmail: no Gmail token found for user_id=%s", user_id)
-            return None
-
-        encrypted_token = result.data["access_token"]
-        try:
-            fernet = Fernet(settings.ENCRYPTION_KEY.encode())
-            return fernet.decrypt(encrypted_token.encode()).decode()
-        except Exception:
-            logger.debug("gmail: Fernet decrypt failed, using raw token for user_id=%s", user_id)
-            return encrypted_token
-    except Exception:
-        logger.error(
-            "gmail: failed to fetch token for user_id=%s",
-            user_id,
-            exc_info=True,
-        )
-        return None
+    token = get_valid_google_token(user_id, "gmail")
+    if token is None:
+        logger.warning("gmail: no valid Google token for user_id=%s", user_id)
+    return token
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +224,12 @@ def _call_gmail_mcp(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "TIMEOUT", "message": "timeout"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "gmail",
+                "error_code": "TIMEOUT",
+                "message": "timeout",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
         return {"status": "error", "output": None, "error": "timeout", "latency_ms": latency_ms}
@@ -252,10 +239,20 @@ def _call_gmail_mcp(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "NETWORK_ERROR", "message": str(exc)},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "gmail",
+                "error_code": "NETWORK_ERROR",
+                "message": str(exc),
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
-        return {"status": "error", "output": None, "error": f"network error: {exc}", "latency_ms": latency_ms}  # noqa: E501
+        return {
+            "status": "error",
+            "output": None,
+            "error": f"network error: {exc}",
+            "latency_ms": latency_ms,
+        }  # noqa: E501
 
     latency_ms = int((time.monotonic() - t0) * 1000)
 
@@ -265,20 +262,40 @@ def _call_gmail_mcp(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "RATE_LIMITED", "message": "rate limited"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "gmail",
+                "error_code": "RATE_LIMITED",
+                "message": "rate limited",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
-        return {"status": "rate_limited", "output": None, "error": "rate_limited", "latency_ms": latency_ms}  # noqa: E501
+        return {
+            "status": "rate_limited",
+            "output": None,
+            "error": "rate_limited",
+            "latency_ms": latency_ms,
+        }  # noqa: E501
 
     if response.status_code == 401:
         logger.warning("gmail: 401 unauthorized [tool=%s user=%s]", tool_name, user_id)
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "AUTH_EXPIRED", "message": "unauthorized — token expired or revoked"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "gmail",
+                "error_code": "AUTH_EXPIRED",
+                "message": "unauthorized — token expired or revoked",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
-        return {"status": "error", "output": None, "error": "unauthorized — token expired or revoked", "latency_ms": latency_ms}  # noqa: E501
+        return {
+            "status": "error",
+            "output": None,
+            "error": "unauthorized — token expired or revoked",
+            "latency_ms": latency_ms,
+        }  # noqa: E501
 
     if not response.is_success:
         logger.error(
@@ -290,10 +307,20 @@ def _call_gmail_mcp(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "PROVIDER_ERROR", "message": f"MCP server returned HTTP {response.status_code}"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "gmail",
+                "error_code": "PROVIDER_ERROR",
+                "message": f"MCP server returned HTTP {response.status_code}",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
-        return {"status": "error", "output": None, "error": f"MCP server returned HTTP {response.status_code}", "latency_ms": latency_ms}  # noqa: E501
+        return {
+            "status": "error",
+            "output": None,
+            "error": f"MCP server returned HTTP {response.status_code}",
+            "latency_ms": latency_ms,
+        }  # noqa: E501
 
     # 7. Parse JSON-RPC response
     try:
@@ -303,10 +330,20 @@ def _call_gmail_mcp(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": "PROVIDER_ERROR", "message": "invalid JSON from MCP server"},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "gmail",
+                "error_code": "PROVIDER_ERROR",
+                "message": "invalid JSON from MCP server",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
-        return {"status": "error", "output": None, "error": "invalid JSON from MCP server", "latency_ms": latency_ms}  # noqa: E501
+        return {
+            "status": "error",
+            "output": None,
+            "error": "invalid JSON from MCP server",
+            "latency_ms": latency_ms,
+        }  # noqa: E501
 
     if "error" in body:
         rpc_error = body["error"]
@@ -319,17 +356,32 @@ def _call_gmail_mcp(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "mcp_server": "gmail", "error_code": str(rpc_error.get("code")), "message": rpc_error.get("message", "unknown MCP error")},  # noqa: E501
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "gmail",
+                "error_code": str(rpc_error.get("code")),
+                "message": rpc_error.get("message", "unknown MCP error"),
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
-        return {"status": "error", "output": None, "error": rpc_error.get("message", "unknown MCP error"), "latency_ms": latency_ms}  # noqa: E501
+        return {
+            "status": "error",
+            "output": None,
+            "error": rpc_error.get("message", "unknown MCP error"),
+            "latency_ms": latency_ms,
+        }  # noqa: E501
 
     result = body.get("result", {})
     logger.info("gmail: success [tool=%s user=%s latency=%dms]", tool_name, user_id, latency_ms)
     _log_event_gmail(
         task_id=task_id,
         event_type="tool_result",
-        payload={"tool_name": tool_name, "mcp_server": "gmail", "status": "success", "output": result},  # noqa: E501
+        payload={
+            "tool_name": tool_name,
+            "mcp_server": "gmail",
+            "status": "success",
+            "output": result,
+        },  # noqa: E501
         latency_ms=latency_ms,
     )
     return {"status": "success", "output": result, "error": None, "latency_ms": latency_ms}
@@ -338,7 +390,6 @@ def _call_gmail_mcp(
 # ---------------------------------------------------------------------------
 # Internal: Gmail REST send path
 # ---------------------------------------------------------------------------
-
 
 
 def _call_gmail_send(
@@ -414,7 +465,12 @@ def _call_gmail_send(
     _log_event_gmail(
         task_id=task_id,
         event_type="tool_called",
-        payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "to": to_str, "subject": input_params.get("subject", "")},  # noqa: E501
+        payload={
+            "tool_name": "gmail.send_message",
+            "mcp_server": "gmail",
+            "to": to_str,
+            "subject": input_params.get("subject", ""),
+        },  # noqa: E501
     )
 
     # 5. POST to the Gmail REST API
@@ -435,7 +491,12 @@ def _call_gmail_send(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "TIMEOUT", "message": "timeout"},  # noqa: E501
+            payload={
+                "tool_name": "gmail.send_message",
+                "mcp_server": "gmail",
+                "error_code": "TIMEOUT",
+                "message": "timeout",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
         return {"status": "error", "output": None, "error": "timeout", "latency_ms": latency_ms}
@@ -445,10 +506,20 @@ def _call_gmail_send(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "NETWORK_ERROR", "message": str(exc)},  # noqa: E501
+            payload={
+                "tool_name": "gmail.send_message",
+                "mcp_server": "gmail",
+                "error_code": "NETWORK_ERROR",
+                "message": str(exc),
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
-        return {"status": "error", "output": None, "error": f"network error: {exc}", "latency_ms": latency_ms}  # noqa: E501
+        return {
+            "status": "error",
+            "output": None,
+            "error": f"network error: {exc}",
+            "latency_ms": latency_ms,
+        }  # noqa: E501
 
     latency_ms = int((time.monotonic() - t0) * 1000)
 
@@ -458,7 +529,12 @@ def _call_gmail_send(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "RATE_LIMITED", "message": "rate limited"},  # noqa: E501
+            payload={
+                "tool_name": "gmail.send_message",
+                "mcp_server": "gmail",
+                "error_code": "RATE_LIMITED",
+                "message": "rate limited",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
         return {
@@ -473,7 +549,12 @@ def _call_gmail_send(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "AUTH_EXPIRED", "message": "unauthorized — token expired or revoked"},  # noqa: E501
+            payload={
+                "tool_name": "gmail.send_message",
+                "mcp_server": "gmail",
+                "error_code": "AUTH_EXPIRED",
+                "message": "unauthorized — token expired or revoked",
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
         return {
@@ -488,7 +569,14 @@ def _call_gmail_send(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "INSUFFICIENT_SCOPE", "message": "insufficient scope — user must reconnect Google with mail-send permission"},  # noqa: E501
+            payload={
+                "tool_name": "gmail.send_message",
+                "mcp_server": "gmail",
+                "error_code": "INSUFFICIENT_SCOPE",
+                "message": (
+                    "insufficient scope — user must reconnect Google with mail-send permission"
+                ),
+            },
             latency_ms=latency_ms,
         )
         return {
@@ -507,7 +595,12 @@ def _call_gmail_send(
         _log_event_gmail(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "error_code": "PROVIDER_ERROR", "message": f"Gmail API returned HTTP {response.status_code}: {detail}".strip(": ")},  # noqa: E501
+            payload={
+                "tool_name": "gmail.send_message",
+                "mcp_server": "gmail",
+                "error_code": "PROVIDER_ERROR",
+                "message": f"Gmail API returned HTTP {response.status_code}: {detail}".strip(": "),
+            },  # noqa: E501
             latency_ms=latency_ms,
         )
         return {
@@ -532,7 +625,12 @@ def _call_gmail_send(
     _log_event_gmail(
         task_id=task_id,
         event_type="tool_result",
-        payload={"tool_name": "gmail.send_message", "mcp_server": "gmail", "status": "success", "output": output},  # noqa: E501
+        payload={
+            "tool_name": "gmail.send_message",
+            "mcp_server": "gmail",
+            "status": "success",
+            "output": output,
+        },  # noqa: E501
         latency_ms=latency_ms,
     )
     return {"status": "success", "output": output, "error": None, "latency_ms": latency_ms}

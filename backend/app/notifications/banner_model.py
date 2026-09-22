@@ -146,11 +146,20 @@ prompt: plain English, no invented details, non-alarming, advisory only.
 
 from __future__ import annotations
 
+import logging
+
+from app.llm.router import route_llm_call
+from app.notifications.banner_contract import (
+    BANNER_MAX_CHARS,
+    NOTIFICATION_TYPES,
+    NotificationBannerPayload,
+)
+
+_logger = logging.getLogger(__name__)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
-
-BANNER_MAX_CHARS = 80
 
 # Safe hardcoded fallbacks — used when LLM returns an unusable response.
 # These are NOT LLM-generated; they are a last-resort safety net.
@@ -159,6 +168,47 @@ BANNER_DEFAULTS: dict[str, str] = {
     "task_completed": "Your task completed.",
     "digest_ready": "Your digest is ready.",
     "oauth_expiring": "A connected account needs your attention.",
+}
+
+# D20 copy rules. This is intentionally data, not branching behavior: the
+# triggering type remains authoritative and banner_text remains advisory copy.
+BANNER_COPY_RULES: dict[str, dict[str, object]] = {
+    "approval_needed": {
+        "permitted_input_fields": "title, body, tool_name, input_params, task_id",
+        "must_state": "what action is pending and the affected tool or target when supplied",
+        "must_not": (
+            "recommend approve or reject, imply the action already ran, invent urgency, "
+            "or expose raw UUIDs"
+        ),
+        "max_length": BANNER_MAX_CHARS,
+        "example_output": "Your agent wants to send an email — tap to review.",
+    },
+    "task_completed": {
+        "permitted_input_fields": "title, body, tool_name, task_id",
+        "must_state": "what finished, in factual past tense",
+        "must_not": (
+            "claim a result absent from the event, expose raw UUIDs, or imply a future action"
+        ),
+        "max_length": BANNER_MAX_CHARS,
+        "example_output": "Done — your calendar event was created successfully.",
+    },
+    "digest_ready": {
+        "permitted_input_fields": "title, body, digest_period",
+        "must_state": "that a digest is available and its period when supplied",
+        "must_not": "invent digest contents or counts, or imply an action occurred",
+        "max_length": BANNER_MAX_CHARS,
+        "example_output": "Your daily digest is ready — see your recent activity.",
+    },
+    "oauth_expiring": {
+        "permitted_input_fields": "title, body, provider, expires_at",
+        "must_state": "which provider connection needs renewal and that reconnecting is needed",
+        "must_not": (
+            "say expired, critical, danger, broken, or failed; hide the provider; "
+            "or invent an expiry date"
+        ),
+        "max_length": BANNER_MAX_CHARS,
+        "example_output": "Your Google connection needs a quick reconnect.",
+    },
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -271,6 +321,17 @@ def build_banner_user_prompt(event: dict) -> str:
         if expires_at:
             context_lines.append(f"Expires at: {expires_at}")
 
+    rule = BANNER_COPY_RULES[notification_type]
+    context_lines.extend(
+        [
+            "Copy rule for this event type:",
+            f"- Permitted facts: {rule['permitted_input_fields']}",
+            f"- Must convey: {rule['must_state']}",
+            f"- Must not: {rule['must_not']}",
+            f"- Maximum length: {rule['max_length']} characters",
+            f"- Reference example (do not copy absent facts): {rule['example_output']}",
+        ]
+    )
     context = "\n".join(context_lines)
 
     return (
@@ -285,36 +346,65 @@ def build_banner_user_prompt(event: dict) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def generate_banner(event: dict) -> str | None:
+async def generate_banner(event: dict) -> str | None:
     """
     Generate a short banner line for a notification event.
-
-    This is a STUB for the D11 spec. The real implementation is built on D17.
 
     Args:
         event: Notification event dict. See module docstring for full shape.
 
     Returns:
         A short banner string (<= 80 chars), or None if generation fails.
-        None is acceptable — banner_text is nullable by design. The notification
-        still fires with title+body intact if banner_text is None.
-
-    Raises:
-        Nothing — all exceptions are caught internally. This function is
-        advisory-only and must never block a notification from being sent.
-
-    Implementation notes for D17:
-        1. Call LLM router with BANNER_SYSTEM_PROMPT + build_banner_user_prompt(event).
-        2. Log to llm_usage_logs with request_type="banner".
-        3. If output > BANNER_MAX_CHARS, truncate with "…" and log a warning.
-        4. If output is empty or None, use BANNER_DEFAULTS.get(event["type"]).
-        5. If unknown type, log error and return None.
-        6. Groq 429 → Gemini fallback is handled by the shared LLM router;
-           no banner-specific exception path is needed here.
     """
-    # D11: Stub only — raises NotImplementedError to make it clear this is unbuilt.
-    # D17 replaces this with the real LLM call.
-    raise NotImplementedError(
-        "generate_banner() is a D11 spec stub. "
-        "Full implementation is scheduled for D17 (2026-09-10)."
+    event_type = event.get("type")
+    if event_type not in NOTIFICATION_TYPES:
+        _logger.error(f"Unknown notification event type: {event_type}")
+        return None
+
+    user_prompt = build_banner_user_prompt(event)
+
+    full_prompt = f"System: {BANNER_SYSTEM_PROMPT}\n\nUser: {user_prompt}"
+
+    try:
+        response = await route_llm_call(prompt=full_prompt, request_type="banner")
+
+        if not response or not response.text:
+            return BANNER_DEFAULTS.get(event_type)
+
+        banner_text = response.text.strip()
+
+        if len(banner_text) > BANNER_MAX_CHARS:
+            _logger.warning(f"Banner exceeded {BANNER_MAX_CHARS} chars, truncating.")
+            banner_text = banner_text[: BANNER_MAX_CHARS - 3] + "..."
+
+        return banner_text
+    except Exception as e:
+        _logger.error(f"Failed to generate banner: {e}", exc_info=True)
+        return None
+
+
+def build_banner_payload(
+    event: dict,
+    banner_text: str | None,
+    *,
+    notification_id: str | None = None,
+    related_task_id: str | None = None,
+    read: bool = False,
+    created_at: str | None = None,
+) -> NotificationBannerPayload:
+    """Assemble the row-shaped payload shared with the mobile banner widget.
+
+    Trigger rules own ``type``, ``title``, ``body`` and task linkage. This
+    helper only places the model's advisory ``banner_text`` into that contract.
+    It never produces approval or risk decisions.
+    """
+    return NotificationBannerPayload(
+        notification_id=notification_id,
+        type=event["type"],
+        title=event.get("title", ""),
+        body=event.get("body", ""),
+        banner_text=banner_text,
+        related_task_id=related_task_id or event.get("task_id"),
+        read=read,
+        created_at=created_at,
     )

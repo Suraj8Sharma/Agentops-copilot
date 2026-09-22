@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
+import 'oauth_connection_service.dart';
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -72,6 +73,8 @@ class OAuthConnectionModel {
     this.scopes = const [],
     this.expiresAt,
     this.connectedAt,
+    this.reauthReason,
+    this.failedOperation,
   });
 
   final OAuthProvider provider;
@@ -81,6 +84,8 @@ class OAuthConnectionModel {
   final List<String> scopes;
   final DateTime? expiresAt;
   final DateTime? connectedAt;
+  final String? reauthReason;
+  final String? failedOperation;
 
   bool get isConnected => status?.isConnected ?? false;
 
@@ -91,6 +96,9 @@ class OAuthConnectionModel {
     DateTime? connectedAt,
     bool clearStatus = false,
     bool clearConnectedAt = false,
+    String? reauthReason,
+    String? failedOperation,
+    bool clearFailure = false,
   }) {
     return OAuthConnectionModel(
       provider: provider,
@@ -99,6 +107,9 @@ class OAuthConnectionModel {
       expiresAt: expiresAt ?? this.expiresAt,
       connectedAt:
           clearConnectedAt ? null : (connectedAt ?? this.connectedAt),
+      reauthReason: clearFailure ? null : (reauthReason ?? this.reauthReason),
+      failedOperation:
+          clearFailure ? null : (failedOperation ?? this.failedOperation),
     );
   }
 }
@@ -145,26 +156,7 @@ String _formatConnectedAt(DateTime dt) {
 // Initial mock data (mirrors DB state)
 // ---------------------------------------------------------------------------
 
-final List<OAuthConnectionModel> _initialConnections = [
-  OAuthConnectionModel(
-    provider: OAuthProvider.googleCalendar,
-    status: OAuthStatus.active,
-    scopes: const ['calendar.events'],
-    connectedAt: DateTime(2026, 8, 20),
-  ),
-  const OAuthConnectionModel(
-    provider: OAuthProvider.gmail,
-  ),
-  OAuthConnectionModel(
-    provider: OAuthProvider.github,
-    status: OAuthStatus.active,
-    scopes: const ['repo'],
-    connectedAt: DateTime(2026, 8, 22),
-  ),
-  const OAuthConnectionModel(
-    provider: OAuthProvider.slack,
-  ),
-];
+
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -183,10 +175,44 @@ class _OAuthConnectionsScreenState extends State<OAuthConnectionsScreen> {
   /// Tracks in-flight state per provider to debounce/disable the button.
   final Map<OAuthProvider, bool> _loading = {};
 
+  bool _isLoadingAll = true;
+  String? _loadError;
+
   @override
   void initState() {
     super.initState();
-    _connections = List<OAuthConnectionModel>.from(_initialConnections);
+    _connections = [
+      const OAuthConnectionModel(provider: OAuthProvider.googleCalendar),
+      const OAuthConnectionModel(provider: OAuthProvider.gmail),
+      const OAuthConnectionModel(provider: OAuthProvider.github),
+      const OAuthConnectionModel(provider: OAuthProvider.slack),
+    ];
+    _fetchConnections();
+  }
+
+  Future<void> _fetchConnections() async {
+    try {
+      final dbConns = await OAuthConnectionService.fetchConnections();
+      final byProvider = {
+        for (final connection in dbConns) connection.provider: connection,
+      };
+      if (!mounted) return;
+      setState(() {
+        _connections = OAuthProvider.values
+            .map((provider) => byProvider[provider] ??
+                OAuthConnectionModel(provider: provider))
+            .toList();
+        _isLoadingAll = false;
+        _loadError = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingAll = false;
+          _loadError = 'Unable to load connections. Please try again.';
+        });
+      }
+    }
   }
 
   bool _isLoading(OAuthProvider provider) => _loading[provider] ?? false;
@@ -197,36 +223,33 @@ class _OAuthConnectionsScreenState extends State<OAuthConnectionsScreen> {
     setState(() => _loading[provider] = true);
 
     try {
-      // D9: local mock toggle — no network call.
-      // D21: replace the body of this try block with a real API call.
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-
-      final index =
-          _connections.indexWhere((c) => c.provider == provider);
+      final index = _connections.indexWhere((c) => c.provider == provider);
       if (index == -1) return;
-
       final current = _connections[index];
-      OAuthConnectionModel updated;
 
       if (current.isConnected) {
-        // Disconnect: clear status & connectedAt
-        updated = current.copyWith(clearStatus: true, clearConnectedAt: true);
+        // Do not optimistically clear a connection before DELETE succeeds.
+        await OAuthConnectionService.disconnect(provider);
+        if (!mounted) return;
+        setState(() {
+          _connections[index] = OAuthConnectionModel(provider: provider);
+        });
       } else {
-        // Connect: set active + mock scopes + now as connectedAt
-        final mockScopes = _mockScopesFor(provider);
-        updated = OAuthConnectionModel(
-          provider: provider,
-          status: OAuthStatus.active,
-          scopes: mockScopes,
-          connectedAt: DateTime.now(),
-        );
+        // Re-authentication deliberately re-enters the existing D21 flow.
+        final authUrl = await OAuthConnectionService.connect(provider);
+        if (authUrl != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${provider.displayName} consent started. Complete it to reconnect.',
+              ),
+            ),
+          );
+        }
+        // The callback may have completed while the consent page was open.
+        await _fetchConnections();
       }
-
-      setState(() {
-        _connections[index] = updated;
-      });
     } catch (e) {
-      // Structural error path — unreachable on D9, but ready for D21.
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -244,21 +267,38 @@ class _OAuthConnectionsScreenState extends State<OAuthConnectionsScreen> {
     }
   }
 
-  List<String> _mockScopesFor(OAuthProvider provider) {
-    switch (provider) {
-      case OAuthProvider.googleCalendar:
-        return const ['calendar.events'];
-      case OAuthProvider.gmail:
-        return const ['gmail.send', 'gmail.compose'];
-      case OAuthProvider.github:
-        return const ['repo'];
-      case OAuthProvider.slack:
-        return const ['chat:write', 'channels:read'];
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingAll) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_loadError != null) {
+      return Scaffold(
+        key: const Key('oauth-connections-error'),
+        appBar: AppBar(title: const Text('OAuth Connections')),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_loadError!, textAlign: TextAlign.center),
+              const SizedBox(height: AppSpacing.md),
+              OutlinedButton(
+                onPressed: () {
+                  setState(() {
+                    _isLoadingAll = true;
+                    _loadError = null;
+                  });
+                  _fetchConnections();
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       key: const Key('oauth-connections-screen'),
       appBar: AppBar(
@@ -366,8 +406,58 @@ class _OAuthConnectionCard extends StatelessWidget {
                   // Status chip
                   _StatusChip(
                     providerKey: provider.key,
-                    connected: connected,
+                    status: model.status,
                   ),
+
+                  if (model.status == OAuthStatus.scopeMismatch) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      key: Key('scope-mismatch-${provider.key}'),
+                      _disabledFeatureText(provider),
+                      style: textTheme.bodySmall?.copyWith(
+                        color: AppColors.error,
+                      ),
+                    ),
+                  ],
+
+                  if (model.status == OAuthStatus.expired ||
+                      model.status == OAuthStatus.revoked) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      key: Key('reauth-prompt-${provider.key}'),
+                      model.reauthReason ??
+                          'Reconnect ${provider.displayName} to continue using this feature.',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: AppColors.error,
+                      ),
+                    ),
+                  ],
+
+                  if (provider == OAuthProvider.googleCalendar &&
+                      _isTestingModeExpirySoon(model.expiresAt)) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      key: const Key('google-testing-mode-expiry-flag'),
+                      'Google testing-mode access expires soon. Reconnect to keep Calendar active.',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: AppColors.warning,
+                      ),
+                    ),
+                  ],
+
+                  if (model.failedOperation == 'gmail_send' &&
+                      model.status != OAuthStatus.active) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    const Text('Re-authenticate before sending this email.'),
+                  ],
+
+                  if (model.failedOperation == 'gmail_draft') ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    const Text(
+                      key: Key('gmail-draft-fallback'),
+                      'Saved, not sent',
+                    ),
+                  ],
 
                   // Scopes text — only when connected
                   if (connected) ...[
@@ -400,6 +490,7 @@ class _OAuthConnectionCard extends StatelessWidget {
             _ActionButton(
               providerKey: provider.key,
               connected: connected,
+              status: model.status,
               isLoading: isLoading,
               onPressed: isLoading ? null : onAction,
             ),
@@ -417,15 +508,24 @@ class _OAuthConnectionCard extends StatelessWidget {
 class _StatusChip extends StatelessWidget {
   const _StatusChip({
     required this.providerKey,
-    required this.connected,
+    required this.status,
   });
 
   final String providerKey;
-  final bool connected;
+  final OAuthStatus? status;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+
+    final label = switch (status) {
+      OAuthStatus.active => 'Connected',
+      OAuthStatus.expired => 'Expired - reconnect required',
+      OAuthStatus.revoked => 'Revoked - reconnect required',
+      OAuthStatus.scopeMismatch => 'Limited access',
+      null => 'Not Connected',
+    };
+    final connected = status == OAuthStatus.active;
 
     return Container(
       key: Key('status-chip-$providerKey'),
@@ -438,7 +538,7 @@ class _StatusChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppSpacing.xs),
       ),
       child: Text(
-        connected ? 'Connected' : 'Not Connected',
+        label,
         style: textTheme.labelSmall?.copyWith(
           color: connected ? AppColors.success : AppColors.neutral500,
           fontWeight: FontWeight.w600,
@@ -456,12 +556,14 @@ class _ActionButton extends StatelessWidget {
   const _ActionButton({
     required this.providerKey,
     required this.connected,
+    required this.status,
     required this.isLoading,
     required this.onPressed,
   });
 
   final String providerKey;
   final bool connected;
+  final OAuthStatus? status;
   final bool isLoading;
   final VoidCallback? onPressed;
 
@@ -515,7 +617,28 @@ class _ActionButton extends StatelessWidget {
           vertical: AppSpacing.sm,
         ),
       ),
-      child: const Text('Connect'),
+      child: Text(status == null ? 'Connect' : 'Re-authenticate'),
     );
   }
+}
+
+String _disabledFeatureText(OAuthProvider provider) {
+  switch (provider) {
+    case OAuthProvider.googleCalendar:
+      return 'Calendar actions are unavailable until access is restored.';
+    case OAuthProvider.gmail:
+      return 'Gmail sending is unavailable until the required scope is restored.';
+    case OAuthProvider.github:
+      return 'Repository actions are unavailable until access is restored.';
+    case OAuthProvider.slack:
+      return 'Slack messaging is unavailable until access is restored.';
+  }
+}
+
+bool _isTestingModeExpirySoon(DateTime? expiresAt) {
+  if (expiresAt == null) return false;
+  final now = DateTime.now().toUtc();
+  final expiry = expiresAt.toUtc();
+  return expiry.isAfter(now) &&
+      !expiry.isAfter(now.add(const Duration(days: 7)));
 }

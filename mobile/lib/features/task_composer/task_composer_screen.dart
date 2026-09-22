@@ -1,82 +1,81 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../core/router.dart';
 import '../../core/theme.dart';
+import '../home/task_service.dart';
 
-/// Mock payload matching the eventual POST /tasks request.
-class MockTaskSubmission {
-  const MockTaskSubmission({
-    required this.inputType,
-    required this.rawInput,
-    this.transcriptionText,
-    required this.status,
-  });
-
-  final String inputType;
-  final String rawInput;
-  final String? transcriptionText;
-  final String status;
+class TaskComposerRouteArgs {
+  const TaskComposerRouteArgs({this.onTaskSubmitted});
+  final VoidCallback? onTaskSubmitted;
 }
 
 enum _SubmissionState { idle, submitting, submitted, failure }
 
 class TaskComposerScreen extends StatefulWidget {
-  const TaskComposerScreen({super.key});
+  const TaskComposerScreen({super.key, this.onTaskSubmitted});
+  final VoidCallback? onTaskSubmitted;
 
   @override
   State<TaskComposerScreen> createState() => _TaskComposerScreenState();
 }
 
 class _TaskComposerScreenState extends State<TaskComposerScreen> {
-  static const Duration _mockSubmissionDuration = Duration(milliseconds: 500);
-
   final TextEditingController _textController = TextEditingController();
-  Timer? _submissionTimer;
   _SubmissionState _submissionState = _SubmissionState.idle;
   String? _validationMessage;
-  MockTaskSubmission? _submittedTask;
+  String? _submissionError;
+  String? _submittedTaskText;
 
   @override
   void dispose() {
-    _submissionTimer?.cancel();
     _textController.dispose();
     super.dispose();
   }
 
-  void _submit() {
-    final input = _textController.text.trim();
-    if (input.isEmpty) {
-      setState(
-          () => _validationMessage = 'Tell your copilot what to do first.');
+  Future<void> _submit() async {
+    final rawInput = _textController.text;
+    if (rawInput.trim().isEmpty) {
+      setState(() => _validationMessage = 'Tell your copilot what to do first.');
       return;
     }
     if (_submissionState == _SubmissionState.submitting) return;
 
     setState(() {
       _validationMessage = null;
+      _submissionError = null;
       _submissionState = _SubmissionState.submitting;
     });
-    _submissionTimer?.cancel();
-    _submissionTimer = Timer(_mockSubmissionDuration, () {
+
+    try {
+      final task = await TaskService.createTextTask(rawInput);
       if (!mounted) return;
       setState(() {
+        _submittedTaskText = task.rawInput;
         _submissionState = _SubmissionState.submitted;
-        _submittedTask = MockTaskSubmission(
-          inputType: 'text',
-          rawInput: input,
-          status: 'submitted',
-        );
       });
-    });
+      widget.onTaskSubmitted?.call();
+    } on TaskServiceException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _submissionError = error.message;
+        _submissionState = _SubmissionState.failure;
+      });
+      if (error.requiresSignIn) {
+        Navigator.of(context).pushNamed(AppRoutes.signIn);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _submissionError = 'Could not reach the service. Check your connection and try again.';
+        _submissionState = _SubmissionState.failure;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isSubmitting = _submissionState == _SubmissionState.submitting;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Create a task')),
       body: SafeArea(
@@ -85,13 +84,9 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('What should your copilot do?',
-                  style: theme.textTheme.headlineMedium),
+              Text('What should your copilot do?', style: theme.textTheme.headlineMedium),
               const SizedBox(height: AppSpacing.xs),
-              Text(
-                'Describe the task in your own words. You will review anything risky before it runs.',
-                style: theme.textTheme.bodyMedium,
-              ),
+              Text('Describe the task in your own words. You will review anything risky before it runs.', style: theme.textTheme.bodyMedium),
               const SizedBox(height: AppSpacing.lg),
               TextField(
                 key: const Key('task-input'),
@@ -99,17 +94,23 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
                 enabled: !isSubmitting,
                 minLines: 4,
                 maxLines: 8,
+                maxLength: 5000,
                 keyboardType: TextInputType.multiline,
                 textInputAction: TextInputAction.newline,
                 onChanged: (_) {
-                  if (_validationMessage != null) {
-                    setState(() => _validationMessage = null);
+                  if (_validationMessage != null || _submissionError != null) {
+                    setState(() {
+                      _validationMessage = null;
+                      _submissionError = null;
+                      if (_submissionState == _SubmissionState.failure) {
+                        _submissionState = _SubmissionState.idle;
+                      }
+                    });
                   }
                 },
                 decoration: InputDecoration(
                   labelText: 'Task request',
-                  hintText:
-                      'For example: Find a time for a team sync next week',
+                  hintText: 'For example: Find a time for a team sync next week',
                   errorText: _validationMessage,
                   alignLabelWithHint: true,
                 ),
@@ -121,11 +122,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
                   key: const Key('submit-task'),
                   onPressed: isSubmitting ? null : _submit,
                   icon: isSubmitting
-                      ? const SizedBox(
-                          width: AppSpacing.md,
-                          height: AppSpacing.md,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const SizedBox(width: AppSpacing.md, height: AppSpacing.md, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.send_outlined),
                   label: Text(isSubmitting ? 'Submitting...' : 'Submit task'),
                 ),
@@ -141,10 +138,7 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),
-              _SubmissionFeedback(
-                state: _submissionState,
-                task: _submittedTask,
-              ),
+              _SubmissionFeedback(state: _submissionState, taskText: _submittedTaskText, error: _submissionError),
             ],
           ),
         ),
@@ -154,72 +148,37 @@ class _TaskComposerScreenState extends State<TaskComposerScreen> {
 }
 
 class _SubmissionFeedback extends StatelessWidget {
-  const _SubmissionFeedback({required this.state, this.task});
-
+  const _SubmissionFeedback({required this.state, this.taskText, this.error});
   final _SubmissionState state;
-  final MockTaskSubmission? task;
+  final String? taskText;
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
     if (state == _SubmissionState.idle) return const SizedBox.shrink();
-
     final isSubmitting = state == _SubmissionState.submitting;
     final isFailure = state == _SubmissionState.failure;
     final color = isFailure ? AppColors.error : AppColors.primary;
-    final background =
-        isFailure ? AppColors.riskHighBg : AppColors.primaryLight;
-    final title = isSubmitting
-        ? 'Submitting your task'
-        : isFailure
-            ? 'Task could not be submitted'
-            : 'Task submitted';
-    final detail = isSubmitting
-        ? 'Your copilot is getting things ready.'
-        : isFailure
-            ? 'Please try again when the service is available.'
-            : 'It will appear in your task list with a submitted status.';
-
+    final background = isFailure ? AppColors.riskHighBg : AppColors.primaryLight;
+    final title = isSubmitting ? 'Submitting your task' : isFailure ? 'Task could not be submitted' : 'Task submitted';
+    final detail = isSubmitting ? 'The service may take a moment to wake up. Please keep this screen open.' : isFailure ? (error ?? 'Please try again when the service is available.') : 'It will appear in your task list with a submitted status.';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(
-            isSubmitting
-                ? Icons.hourglass_top_outlined
-                : isFailure
-                    ? Icons.error_outline
-                    : Icons.check_circle_outline,
-            color: color,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: AppSpacing.xs),
-                Text(detail, style: Theme.of(context).textTheme.bodyMedium),
-                if (task != null) ...<Widget>[
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    key: const Key('submitted-task-text'),
-                    task!.rawInput,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(AppSpacing.cardRadius)),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        Icon(isSubmitting ? Icons.hourglass_top_outlined : isFailure ? Icons.error_outline : Icons.check_circle_outline, color: color),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xs),
+          Text(detail, style: Theme.of(context).textTheme.bodyMedium),
+          if (taskText != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            Text(key: const Key('submitted-task-text'), taskText!, maxLines: 3, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ])),
+      ]),
     );
   }
 }

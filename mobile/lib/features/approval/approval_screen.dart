@@ -1,70 +1,12 @@
-// AgentOps Copilot — Approval Screen (Day 8)
-//
-// Owner: Ishani
-// Deliverable: Risk Card UI + Approve / Reject (mock)
-//
-// Safety notes (Manual §9.2, §9.3, §15):
-//   • The advisory explanation text is DISPLAY ONLY — no code path here
-//     reads explanationText to drive the approve/reject outcome.
-//   • Neither Approve nor Reject is pre-selected, highlighted, or made
-//     visually easier than the other. Both are equal-weight actions.
-//   • A decision is locked in after the first tap; double-tap is ignored.
-//   • "No decision" (app closed mid-review) is left as an unresolved state;
-//     it is never silently treated as approve or reject.
-//   • Only steps with requiresApproval == true should reach this screen;
-//     a low-risk step arriving here is flagged as an unexpected data state.
-
 import 'package:flutter/material.dart';
 
+import '../../core/router.dart';
 import '../../core/theme.dart';
-
-// ---------------------------------------------------------------------------
-// DATA MODELS
-// ---------------------------------------------------------------------------
-// Shapes mirror plan_steps + approvals + risk_rules (Manual §7) so that
-// future wiring to GET /tasks/{id}/plan and POST /approvals/{step_id}
-// is a data-source swap, not a structural rewrite.
-
-/// Mirrors a row from the `plan_steps` table for the step under review.
-class ApprovalStep {
-  const ApprovalStep({
-    required this.id,
-    required this.toolName,
-    required this.mcpServer,
-    required this.riskTier,
-    required this.requiresApproval,
-    required this.status,
-    this.inputParams = const <String, dynamic>{},
-    this.explanationText,
-  });
-
-  final String id;
-  final String toolName;
-  final String mcpServer;
-  final RiskTier riskTier;
-
-  /// Should always be true for a step that reaches this screen.
-  /// If false, this is flagged as an unexpected data state.
-  final bool requiresApproval;
-
-  /// Should always be 'awaiting_approval' on arrival.
-  final String status;
-
-  /// Raw input params from the planner; feeds the explanation LLM; not rendered raw.
-  final Map<String, dynamic> inputParams;
-
-  /// Plain-English advisory copy from the Section 9.3 explainer LLM.
-  /// Display only — MUST NOT influence approve/reject logic.
-  final String? explanationText;
-}
-
-/// The decision recorded to the `approvals` table on submit.
-enum ApprovalDecision { approved, rejected }
-
-// ---------------------------------------------------------------------------
-// MOCK DATA
-// ---------------------------------------------------------------------------
-// Shape matches plan_steps + approvals + risk_rules (Manual §7).
+export 'approval_models.dart';
+import 'approval_models.dart';
+import 'approval_service.dart';
+import '../plan_view/plan_service.dart';
+import '../plan_view/plan_view_screen.dart';
 
 const ApprovalStep mockApprovalStep = ApprovalStep(
   id: 'step-gmail-send-001',
@@ -73,145 +15,300 @@ const ApprovalStep mockApprovalStep = ApprovalStep(
   riskTier: RiskTier.high,
   requiresApproval: true,
   status: 'awaiting_approval',
-  inputParams: <String, dynamic>{
-    'to': 'professor.rao@university.edu',
-    'subject': "Agenda for Thursday's call",
-    'body': 'Hi Professor Rao, please find the agenda attached...',
-  },
   explanationText:
-      "This will send an email to professor.rao@university.edu with the "
-      "subject \u2018Agenda for Thursday\u2019s call\u2019.",
+      "This will send an email to professor.rao@university.edu with the subject 'Agenda for Thursday's call'.",
 );
 
-// ---------------------------------------------------------------------------
-// SCREEN
-// ---------------------------------------------------------------------------
-
 class ApprovalScreen extends StatefulWidget {
-  const ApprovalScreen({super.key, this.step = mockApprovalStep});
-
-  final ApprovalStep step;
+  const ApprovalScreen({super.key, this.step});
+  final ApprovalStep? step;
 
   @override
   State<ApprovalScreen> createState() => _ApprovalScreenState();
 }
 
 class _ApprovalScreenState extends State<ApprovalScreen> {
-  // Null == no decision made yet.
-  // A non-null value is final — it cannot be toggled back.
-  ApprovalDecision? _decision;
+  List<ApprovalStep> _pending = <ApprovalStep>[];
+  final Map<String, MockPlan> _plans = <String, MockPlan>{};
+  final Set<String> _processing = <String>{};
+  String? _errorMessage;
+  bool _isLoading = true;
 
-  // Prevents double-tap from firing two conflicting decisions.
-  bool _isProcessing = false;
+  @override
+  void initState() {
+    super.initState();
+    if (widget.step != null) {
+      _pending = <ApprovalStep>[widget.step!];
+      _fetchPlansForPending();
+    } else {
+      _fetchPending();
+    }
+  }
 
-  // Wall-clock timestamp when this screen was surfaced, used to compute
-  // response_time_ms for the Trust Dashboard (Manual §7, approvals table).
-  // ignore: unused_field
-  final DateTime _surfacedAt = DateTime.now();
-
-  void _handleDecision(ApprovalDecision decision) {
-    // Guard: already decided or still processing previous tap — do nothing.
-    if (_decision != null || _isProcessing) return;
-
-    setState(() => _isProcessing = true);
-
-    // Brief lock-in delay (mirrors the eventual async POST).
-    Future<void>.delayed(const Duration(milliseconds: 150), () {
+  Future<void> _fetchPending() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final pending = await ApprovalService.fetchPending();
       if (!mounted) return;
       setState(() {
-        _decision = decision;
-        _isProcessing = false;
+        _pending = pending;
       });
-    });
+      await _fetchPlansForPending();
+    } on ApprovalServiceException catch (error) {
+      if (!mounted) return;
+      if (error.requiresSignIn) {
+        Navigator.of(context).pushNamed(AppRoutes.signIn);
+      } else {
+        setState(() {
+          _errorMessage = error.message;
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage =
+            'Could not load approvals. Check your connection and try again.';
+        _isLoading = false;
+      });
+    }
+  }
 
-    // ignore: unused_field — _surfacedAt will be used when wiring POST /approvals/{step_id}
-    // to compute response_time_ms: DateTime.now().difference(_surfacedAt).inMilliseconds
+  Future<void> _fetchPlansForPending() async {
+    try {
+      final taskIds = _pending.map((e) => e.taskId).where((id) => id.isNotEmpty).toSet();
+      for (final taskId in taskIds) {
+        if (!_plans.containsKey(taskId)) {
+          final plan = await PlanService.fetchPlan(taskId);
+          _plans[taskId] = plan;
+        }
+      }
+    } catch (e) {
+      // If fetching plan fails, we can fallback to just showing the pending step
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _decide(ApprovalStep step, ApprovalDecision decision) async {
+    if (_processing.contains(step.id)) return;
+    setState(() => _processing.add(step.id));
+    try {
+      await ApprovalService.decide(step.id, decision);
+      if (!mounted) return;
+      setState(() {
+        _processing.remove(step.id);
+        
+        // Optimistically update the step in the plan so the UI reflects it
+        if (_plans.containsKey(step.taskId)) {
+          final plan = _plans[step.taskId]!;
+          final updatedSteps = plan.steps.map((s) {
+            if (s.id == step.id) {
+              return PlanStep(
+                id: s.id,
+                stepIndex: s.stepIndex,
+                toolName: s.toolName,
+                mcpServer: s.mcpServer,
+                riskTier: s.riskTier,
+                requiresApproval: s.requiresApproval,
+                status: decision == ApprovalDecision.approved ? PlanStepStatus.approved : PlanStepStatus.rejected,
+                inputParams: s.inputParams,
+                output: s.output,
+              );
+            }
+            return s;
+          }).toList();
+          _plans[step.taskId] = MockPlan(
+            id: plan.id,
+            taskId: plan.taskId,
+            plannerVersion: plan.plannerVersion,
+            status: plan.status,
+            steps: updatedSteps,
+            planJson: plan.planJson,
+          );
+        } else {
+          // If no plan context, remove from pending
+          _pending.removeWhere((item) => item.id == step.id);
+        }
+      });
+    } on ApprovalServiceException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _processing.remove(step.id);
+        _errorMessage = error.message;
+      });
+      if (error.requiresSignIn) {
+        Navigator.of(context).pushNamed(AppRoutes.signIn);
+      } else if (error.refreshPending) {
+        await _fetchPending();
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _processing.remove(step.id);
+        _errorMessage = 'An error occurred while saving your decision.';
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Safety guard: only requiresApproval == true steps should reach here.
-    if (!widget.step.requiresApproval) {
-      return const _UnexpectedRiskState();
-    }
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Review Required')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSpacing.screenPadding),
+      appBar: AppBar(title: const Text('Approvals')),
+      body: SafeArea(child: _buildBody(context)),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    if (_isLoading) {
+      return const Center(
+        key: Key('approval-loading'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            CircularProgressIndicator(),
+            SizedBox(height: AppSpacing.md),
+            Text('Loading approvals...'),
+          ],
+        ),
+      );
+    }
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const _ScreenHeader(),
+              const Icon(Icons.error_outline,
+                  color: AppColors.error, size: AppSpacing.xxl),
               const SizedBox(height: AppSpacing.md),
-              _RiskCard(step: widget.step),
-              const SizedBox(height: AppSpacing.lg),
-              if (_decision == null)
-                _DecisionButtons(
-                  isProcessing: _isProcessing,
-                  onApprove: () => _handleDecision(ApprovalDecision.approved),
-                  onReject: () => _handleDecision(ApprovalDecision.rejected),
-                )
-              else
-                _DecisionConfirmed(decision: _decision!),
+              Text('Approval service unavailable',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: AppSpacing.xs),
+              Text(_errorMessage!, textAlign: TextAlign.center),
+              const SizedBox(height: AppSpacing.md),
+              ElevatedButton(
+                onPressed: _fetchPending,
+                child: const Text('Retry'),
+              ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// SCREEN HEADER
-// ---------------------------------------------------------------------------
-
-class _ScreenHeader extends StatelessWidget {
-  const _ScreenHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      );
+    }
+    if (_pending.isEmpty) {
+      return const Center(
+        key: Key('approval-empty'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.inbox_outlined,
+                size: AppSpacing.xxl, color: AppColors.neutral500),
+            SizedBox(height: AppSpacing.md),
+            Text('Nothing waiting on you right now'),
+          ],
+        ),
+      );
+    }
+    return ListView(
+      key: const Key('approval-pending-list'),
+      padding: const EdgeInsets.all(AppSpacing.screenPadding),
       children: <Widget>[
-        Text(
-          'Action requires your approval',
-          style: Theme.of(context).textTheme.headlineMedium,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'Review what your copilot plans to do before it runs.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
+        const _ScreenHeader(),
+        const SizedBox(height: AppSpacing.md),
+        for (final step in _pending) ...<Widget>[
+          if (_plans.containsKey(step.taskId))
+            _buildPlanContext(context, step, _plans[step.taskId]!)
+          else
+            _buildFallbackCard(context, step),
+          const SizedBox(height: AppSpacing.lg),
+        ],
       ],
     );
   }
-}
 
-// ---------------------------------------------------------------------------
-// RISK CARD
-// ---------------------------------------------------------------------------
+  Widget _buildPlanContext(BuildContext context, ApprovalStep pendingStep, MockPlan plan) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        PlanSummary(plan: plan),
+        const SizedBox(height: AppSpacing.md),
+        ...plan.steps.asMap().entries.map((entry) {
+          final pStep = entry.value;
+          final isLast = entry.key == plan.steps.length - 1;
+          return Column(
+            children: [
+              PlanStepCard(step: pStep, isLast: isLast),
+              if (pStep.id == pendingStep.id && pStep.status == PlanStepStatus.awaitingApproval) ...[
+                const SizedBox(height: AppSpacing.sm),
+                _buildApprovalControls(context, pendingStep),
+                const SizedBox(height: AppSpacing.md),
+              ],
+            ],
+          );
+        }),
+      ],
+    );
+  }
 
-class _RiskCard extends StatelessWidget {
-  const _RiskCard({required this.step});
+  Widget _buildFallbackCard(BuildContext context, ApprovalStep step) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (step.requiresApproval)
+          _RiskCard(step: step)
+        else
+          const _UnexpectedRiskState(),
+        if (step.requiresApproval) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          _DecisionButtons(
+            isProcessing: _processing.contains(step.id),
+            approveKey: Key('approve-button-${step.id}'),
+            rejectKey: Key('reject-button-${step.id}'),
+            onApprove: () => _decide(step, ApprovalDecision.approved),
+            onReject: () => _decide(step, ApprovalDecision.rejected),
+          ),
+        ],
+      ],
+    );
+  }
 
-  final ApprovalStep step;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildApprovalControls(BuildContext context, ApprovalStep step) {
     return Card(
-      key: const Key('approval-risk-card'),
+      color: AppColors.riskMediumBg,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            _RiskCardHeader(step: step),
-            const Divider(height: AppSpacing.lg),
-            _ActionDetails(step: step),
+          children: [
+            Text('Requires your approval to run',
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: AppSpacing.sm),
+            Text('What this action will do',
+                style: Theme.of(context).textTheme.labelMedium),
+            const SizedBox(height: AppSpacing.xs),
+            _Explanation(explanationText: step.explanationText),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+                'This description is advisory only and does not affect the outcome of your decision.',
+                key: const Key('explanation-advisory-disclaimer'),
+                style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: AppSpacing.md),
-            _ExplanationSection(explanationText: step.explanationText),
+            _DecisionButtons(
+              isProcessing: _processing.contains(step.id),
+              approveKey: Key('approve-button-${step.id}'),
+              rejectKey: Key('reject-button-${step.id}'),
+              onApprove: () => _decide(step, ApprovalDecision.approved),
+              onReject: () => _decide(step, ApprovalDecision.rejected),
+            ),
           ],
         ),
       ),
@@ -219,419 +316,159 @@ class _RiskCard extends StatelessWidget {
   }
 }
 
-class _RiskCardHeader extends StatelessWidget {
-  const _RiskCardHeader({required this.step});
-
-  final ApprovalStep step;
-
+class _ScreenHeader extends StatelessWidget {
+  const _ScreenHeader();
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Container(
-          key: const Key('risk-tier-badge'),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: AppSpacing.xs,
-          ),
-          decoration: BoxDecoration(
-            color: step.riskTier.background,
-            borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text('Action requires your approval',
+              style: Theme.of(context).textTheme.headlineMedium),
+          const SizedBox(height: AppSpacing.xs),
+          Text('Review what your copilot plans to do before it runs.',
+              style: Theme.of(context).textTheme.bodyMedium),
+        ],
+      );
+}
+
+class _RiskCard extends StatelessWidget {
+  const _RiskCard({required this.step});
+  final ApprovalStep step;
+  @override
+  Widget build(BuildContext context) => Card(
+        key: const Key('approval-risk-card'),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(
-                Icons.shield_outlined,
-                size: AppSpacing.md,
-                color: step.riskTier.color,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                step.riskTier.label,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: step.riskTier.color,
+              Row(
+                children: <Widget>[
+                  Container(
+                    key: const Key('risk-tier-badge'),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                    decoration: BoxDecoration(
+                        color: step.riskTier.background,
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.buttonRadius)),
+                    child: Text(
+                      step.riskTier.label,
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelMedium
+                          ?.copyWith(color: step.riskTier.color),
                     ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text('Requires your approval to run',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ),
+                ],
               ),
+              const Divider(height: AppSpacing.lg),
+              Text('Action', style: Theme.of(context).textTheme.labelMedium),
+              const SizedBox(height: AppSpacing.xs),
+              Text(step.toolName,
+                  key: const Key('approval-tool-name'),
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: AppSpacing.xs),
+              Text('Integration: ${step.mcpServer}',
+                  key: const Key('approval-mcp-server'),
+                  style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: AppSpacing.md),
+              Text('What this action will do',
+                  style: Theme.of(context).textTheme.labelMedium),
+              const SizedBox(height: AppSpacing.xs),
+              _Explanation(explanationText: step.explanationText),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                  'This description is advisory only and does not affect the outcome of your decision.',
+                  key: const Key('explanation-advisory-disclaimer'),
+                  style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
         ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Text(
-            'Requires your approval to run',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ActionDetails extends StatelessWidget {
-  const _ActionDetails({required this.step});
-
-  final ApprovalStep step;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          'Action',
-          style: Theme.of(context).textTheme.labelMedium,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          step.toolName,
-          key: const Key('approval-tool-name'),
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Row(
-          children: <Widget>[
-            const Icon(
-              Icons.hub_outlined,
-              size: AppSpacing.md,
-              color: AppColors.neutral500,
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Expanded(
-              child: Text(
-                'Integration: ${step.mcpServer}',
-                key: const Key('approval-mcp-server'),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// EXPLANATION SECTION (advisory, display-only)
-// ---------------------------------------------------------------------------
-// The explanation text is produced by the Section 9.3 advisory LLM.
-// It is rendered as display-only prose. No code path here reads this text
-// to influence the approve/reject outcome — that separation is the core
-// safety invariant (Guardrail 3, Manual §9.3).
-
-class _ExplanationSection extends StatelessWidget {
-  const _ExplanationSection({required this.explanationText});
-
-  final String? explanationText;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            const Icon(
-              Icons.info_outline,
-              size: AppSpacing.md,
-              color: AppColors.neutral500,
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Expanded(
-              child: Text(
-                'What this action will do',
-                style: Theme.of(context).textTheme.labelMedium,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        _ExplanationBody(explanationText: explanationText),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'This description is advisory only and does not affect the outcome '
-          'of your decision.',
-          key: const Key('explanation-advisory-disclaimer'),
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    );
-  }
-}
-
-/// Renders the advisory explanation text with graceful fallback handling
-/// (edge case: missing or malformed explanation, Manual §5).
-class _ExplanationBody extends StatelessWidget {
-  const _ExplanationBody({required this.explanationText});
-
-  final String? explanationText;
-
-  // Max chars before overflow handling (Guardrail 3, Manual §9.3).
-  static const int _maxDisplayChars = 400;
-
-  @override
-  Widget build(BuildContext context) {
-    // Edge case: explanation is missing — show a structured fallback.
-    if (explanationText == null || explanationText!.trim().isEmpty) {
-      return Container(
-        key: const Key('explanation-fallback'),
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        decoration: BoxDecoration(
-          color: AppColors.neutral100,
-          borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
-          border: Border.all(color: AppColors.neutral300),
-        ),
-        child: Text(
-          'No advisory description is available for this action. '
-          'Review the action name and integration above before deciding.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
       );
-    }
-
-    // Edge case: overly long — cap without cutting mid-word.
-    final String displayText = explanationText!.length > _maxDisplayChars
-        ? '${explanationText!.substring(0, _maxDisplayChars).trimRight()}\u2026'
-        : explanationText!;
-
-    return Container(
-      key: const Key('explanation-text'),
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: AppColors.neutral100,
-        borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
-        border: Border.all(color: AppColors.neutral300),
-      ),
-      child: Text(
-        displayText,
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-    );
-  }
 }
 
-// ---------------------------------------------------------------------------
-// DECISION BUTTONS
-// ---------------------------------------------------------------------------
-// Approve and Reject are equal-weight, equally-sized buttons (both Expanded).
-// Neither is pre-selected, default-highlighted, or visually favoured.
-// Both use the same outlined style — one in primary blue, one in error red —
-// to prevent any optical bias toward approval.
+class _Explanation extends StatelessWidget {
+  const _Explanation({this.explanationText});
+  final String? explanationText;
+  @override
+  Widget build(BuildContext context) {
+    if (explanationText == null || explanationText!.isEmpty) {
+      return const Text('No explanation available.',
+          key: Key('explanation-fallback'));
+    }
+    return Text(explanationText!,
+        key: const Key('explanation-text'),
+        style: Theme.of(context).textTheme.bodyMedium);
+  }
+}
 
 class _DecisionButtons extends StatelessWidget {
   const _DecisionButtons({
     required this.isProcessing,
+    required this.approveKey,
+    required this.rejectKey,
     required this.onApprove,
     required this.onReject,
   });
-
   final bool isProcessing;
+  final Key approveKey;
+  final Key rejectKey;
   final VoidCallback onApprove;
   final VoidCallback onReject;
-
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Text(
-          'Your decision',
-          style: Theme.of(context).textTheme.labelMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'Both choices are final. This action will not run without an '
-          'explicit approval.',
-          style: Theme.of(context).textTheme.bodySmall,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: <Widget>[
-            // REJECT — left
-            Expanded(
-              child: _DecisionButton(
-                key: const Key('reject-button'),
-                label: 'Reject',
-                icon: Icons.block_outlined,
-                foregroundColor: AppColors.riskHigh,
-                backgroundColor: AppColors.riskHighBg,
-                borderColor: AppColors.riskHigh,
-                isProcessing: isProcessing,
-                onPressed: onReject,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            // APPROVE — right, same outlined style (no fill/elevation bias)
-            Expanded(
-              child: _DecisionButton(
-                key: const Key('approve-button'),
-                label: 'Approve',
-                icon: Icons.check_circle_outline,
-                foregroundColor: AppColors.primary,
-                backgroundColor: AppColors.primaryLight,
-                borderColor: AppColors.primary,
-                isProcessing: isProcessing,
-                onPressed: onApprove,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _DecisionButton extends StatelessWidget {
-  const _DecisionButton({
-    super.key,
-    required this.label,
-    required this.icon,
-    required this.foregroundColor,
-    required this.backgroundColor,
-    required this.borderColor,
-    required this.isProcessing,
-    required this.onPressed,
-  });
-
-  final String label;
-  final IconData icon;
-  final Color foregroundColor;
-  final Color backgroundColor;
-  final Color borderColor;
-  final bool isProcessing;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      style: OutlinedButton.styleFrom(
-        foregroundColor: foregroundColor,
-        backgroundColor: backgroundColor,
-        side: BorderSide(color: borderColor),
-        padding: const EdgeInsets.symmetric(
-          vertical: AppSpacing.sm + AppSpacing.xs,
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
-        ),
-      ),
-      onPressed: isProcessing ? null : onPressed,
-      icon: Icon(icon, size: AppSpacing.md),
-      label: Text(
-        label,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: foregroundColor,
-            ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// DECISION CONFIRMED BANNER
-// ---------------------------------------------------------------------------
-// Replaces the buttons after a decision is made.
-// Clearly states the outcome; no undo path.
-
-class _DecisionConfirmed extends StatelessWidget {
-  const _DecisionConfirmed({required this.decision});
-
-  final ApprovalDecision decision;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool isApproved = decision == ApprovalDecision.approved;
-    final Color color = isApproved ? AppColors.primary : AppColors.riskHigh;
-    final Color bgColor =
-        isApproved ? AppColors.primaryLight : AppColors.riskHighBg;
-    final IconData icon =
-        isApproved ? Icons.check_circle_outline : Icons.block_outlined;
-    final String title = isApproved ? 'Approved' : 'Rejected';
-    final String body = isApproved
-        ? 'Your approval has been recorded. The action will proceed.'
-        : 'Your rejection has been recorded. The action will not run.';
-
-    return Container(
-      key: Key('decision-confirmed-${decision.name}'),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => Column(
         children: <Widget>[
-          Icon(icon, color: color, size: AppSpacing.lg),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: color,
-                      ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(body, style: Theme.of(context).textTheme.bodyMedium),
-              ],
+          if (isProcessing)
+            const Padding(
+              padding: EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  CircularProgressIndicator(strokeWidth: 2),
+                  SizedBox(width: AppSpacing.sm),
+                  Text('Recording decision...')
+                ],
+              ),
             ),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: rejectKey,
+                  onPressed: isProcessing ? null : onReject,
+                  icon: const Icon(Icons.block_outlined),
+                  label: const Text('Reject'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: approveKey,
+                  onPressed: isProcessing ? null : onApprove,
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('Approve'),
+                ),
+              ),
+            ],
           ),
         ],
-      ),
-    );
-  }
+      );
 }
-
-// ---------------------------------------------------------------------------
-// UNEXPECTED RISK STATE GUARD
-// ---------------------------------------------------------------------------
-// Rendered if a step with requiresApproval == false somehow reaches this
-// screen. Surfaced explicitly rather than silently proceeding.
 
 class _UnexpectedRiskState extends StatelessWidget {
   const _UnexpectedRiskState();
-
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Review Required')),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.screenPadding),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                const Icon(
-                  Icons.warning_amber_outlined,
-                  size: AppSpacing.xxl,
-                  color: AppColors.riskMedium,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  'Unexpected step state',
-                  style: Theme.of(context).textTheme.titleMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'This step does not require approval. It should not have '
-                  'reached this screen. This is a data or routing issue to '
-                  'be investigated before real wiring begins.',
-                  key: const Key('unexpected-risk-body'),
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        key: const Key('unexpected-risk-body'),
+        padding: const EdgeInsets.all(AppSpacing.md),
+        color: AppColors.riskMediumBg,
+        child: const Text(
+            'Unexpected step state: this step does not require approval.'),
+      );
 }

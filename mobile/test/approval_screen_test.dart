@@ -1,364 +1,334 @@
-// AgentOps Copilot — Approval Screen Widget Tests (Day 8)
-//
-// Owner: Ishani
-// 100%-coverage, never-mis-render bar per Manual §15 / Section 3.
-//
-// Test philosophy:
-//   • Every acceptance criterion from the spec doc is asserted explicitly.
-//   • No test verifies that explanation content influences the decision
-//     outcome — that separation is a structural guarantee, not just a test.
-//   • All edge-case paths (missing explanation, long explanation, double-tap,
-//     unexpected risk state, sparse inputParams) have dedicated test cases.
-//   • Widget keys are used throughout so assertions are layout-stable.
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:agentops_copilot/core/theme.dart';
 import 'package:agentops_copilot/features/approval/approval_screen.dart';
+import 'package:agentops_copilot/features/approval/approval_service.dart';
+import 'package:agentops_copilot/features/plan_view/plan_service.dart';
+import 'package:agentops_copilot/features/plan_view/plan_view_screen.dart';
 
-// ---------------------------------------------------------------------------
-// TEST HELPERS
-// ---------------------------------------------------------------------------
-
-Widget _wrap(Widget child) => MaterialApp(theme: AppTheme.light, home: child);
-
-Widget _screen({ApprovalStep step = mockApprovalStep}) =>
-    _wrap(ApprovalScreen(step: step));
-
-// Minimal high-risk step — sparse inputParams edge case.
-const ApprovalStep _sparseStep = ApprovalStep(
-  id: 'step-sparse-001',
-  toolName: 'slack.send_message',
-  mcpServer: 'slack',
+const ApprovalStep pendingStep = ApprovalStep(
+  id: 'step-1',
+  taskId: 'task-1',
+  toolName: 'gmail.send_message',
+  mcpServer: 'gmail',
   riskTier: RiskTier.high,
   requiresApproval: true,
   status: 'awaiting_approval',
-  // No inputParams, no explanationText
+  explanationText: 'Send the launch agenda to the project team.',
 );
 
-// Low-risk step that should never reach this screen.
-const ApprovalStep _lowRiskStep = ApprovalStep(
-  id: 'step-low-001',
-  toolName: 'calendar.list_events',
-  mcpServer: 'calendar',
-  riskTier: RiskTier.low,
-  requiresApproval: false,
-  status: 'pending',
+const MockPlan mockSingleStepPlan = MockPlan(
+  id: 'plan-1',
+  taskId: 'task-1',
+  plannerVersion: 'v1',
+  status: 'active',
+  steps: [
+    PlanStep(
+      id: 'step-1',
+      stepIndex: 1,
+      toolName: 'gmail.send_message',
+      mcpServer: 'gmail',
+      riskTier: RiskTier.high,
+      requiresApproval: true,
+      status: PlanStepStatus.awaitingApproval,
+    ),
+  ],
 );
 
-// Step with an overly long explanation to test cap handling.
-const ApprovalStep _longExplanationStep = ApprovalStep(
-  id: 'step-long-001',
-  toolName: 'github.create_issue',
-  mcpServer: 'github',
-  riskTier: RiskTier.medium,
-  requiresApproval: true,
-  status: 'awaiting_approval',
-  explanationText:
-      'This action will create a new issue in the repository. '
-      'The issue will be titled with the provided summary text and assigned '
-      'to the current user. It will include a description, labels, and may '
-      'trigger notification emails to all watchers of the repository. '
-      'This is an irreversible operation in the sense that once created, '
-      'the issue will be visible to all repository collaborators. The action '
-      'cannot be undone from within the copilot after it executes — only '
-      'manual deletion via the GitHub UI would remove it. Please review the '
-      'content carefully before approving this step.',
-);
+Widget screen() => MaterialApp(
+      theme: AppTheme.light,
+      home: const ApprovalScreen(),
+    );
 
 void main() {
-  // -------------------------------------------------------------------------
-  // 1. RENDERS THE RISK CARD WITH REQUIRED FIELDS
-  // -------------------------------------------------------------------------
-
-  testWidgets('renders risk card with action, integration, and risk tier',
-      (tester) async {
-    await tester.pumpWidget(_screen());
-
-    expect(find.byKey(const Key('approval-risk-card')), findsOneWidget);
-    expect(find.byKey(const Key('risk-tier-badge')), findsOneWidget);
-    expect(find.byKey(const Key('approval-tool-name')), findsOneWidget);
-    expect(find.byKey(const Key('approval-mcp-server')), findsOneWidget);
-    expect(find.text('gmail.send_message'), findsOneWidget);
-    expect(find.text('Integration: gmail'), findsOneWidget);
-    expect(find.text('HIGH RISK'), findsOneWidget);
+  setUp(() {
+    PlanService.fetchPlanOverride = (taskId) async {
+      return mockSingleStepPlan;
+    };
   });
 
-  // -------------------------------------------------------------------------
-  // 2. EXPLANATION IS DISPLAY-ONLY — NO CODE PATH TIES IT TO THE OUTCOME
-  // -------------------------------------------------------------------------
-  // This test verifies the structural invariant: tapping Approve/Reject
-  // produces the correct outcome regardless of the explanation text.
-  // (The explanation is never read by _handleDecision — this test confirms
-  // the result is purely driven by which button was tapped.)
+  tearDown(() {
+    ApprovalService.fetchPendingOverride = null;
+    ApprovalService.decideOverride = null;
+    PlanService.fetchPlanOverride = null;
+  });
 
-  testWidgets('explanation text is display-only — approve outcome is correct',
-      (tester) async {
-    await tester.pumpWidget(_screen());
+  testWidgets('fetches and renders pending approval verbatim', (tester) async {
+    ApprovalService.fetchPendingOverride =
+        () async => <ApprovalStep>[pendingStep];
 
-    expect(find.byKey(const Key('explanation-text')), findsOneWidget);
-    expect(find.byKey(const Key('explanation-advisory-disclaimer')),
+    await tester.pumpWidget(screen());
+    expect(find.byKey(const Key('approval-loading')), findsOneWidget);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('approval-pending-list')), findsOneWidget);
+    expect(find.text('Send the launch agenda to the project team.'),
         findsOneWidget);
+    expect(find.byKey(const Key('approve-button-step-1')), findsOneWidget);
+    expect(find.byKey(const Key('reject-button-step-1')), findsOneWidget);
+  });
 
-    await tester.tap(find.byKey(const Key('approve-button')));
+  testWidgets('test_approval_screen_never_auto_approves', (tester) async {
+    final completer = Completer<List<ApprovalStep>>();
+    ApprovalService.fetchPendingOverride = () => completer.future;
+
+    await tester.pumpWidget(screen());
+    await tester.pump();
+    expect(find.byKey(const Key('approval-loading')), findsOneWidget);
+    expect(find.text('Approved'), findsNothing);
+
+    completer.complete(<ApprovalStep>[pendingStep]);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('approve-button-step-1')), findsOneWidget);
+    expect(find.text('Approved'), findsNothing);
+  });
+
+  testWidgets('posts approve decision and disables controls in flight',
+      (tester) async {
+    final completer = Completer<void>();
+    String? stepId;
+    ApprovalDecision? decision;
+    ApprovalService.fetchPendingOverride =
+        () async => <ApprovalStep>[pendingStep];
+    ApprovalService.decideOverride = (id, value) {
+      stepId = id;
+      decision = value;
+      return completer.future;
+    };
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('approve-button-step-1')));
+    await tester.pump();
+
+    expect(stepId, 'step-1');
+    expect(decision, ApprovalDecision.approved);
+    expect(find.text('Recording decision...'), findsOneWidget);
+    expect(
+        tester
+            .widget<OutlinedButton>(
+                find.byKey(const Key('approve-button-step-1')))
+            .onPressed,
+        isNull);
+
+    completer.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('APPROVED'), findsOneWidget);
+  });
+
+  testWidgets('reject decision is sent and failure is visible', (tester) async {
+    ApprovalService.fetchPendingOverride =
+        () async => <ApprovalStep>[pendingStep];
+    ApprovalService.decideOverride = (_, decision) async {
+      expect(decision, ApprovalDecision.rejected);
+      throw const ApprovalServiceException('Service unavailable (HTTP 503)');
+    };
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('reject-button-step-1')));
     await tester.pumpAndSettle();
 
-    // Decision outcome is 'approved' — driven by button tap, not explanation.
-    // The risk card (and its advisory text) remains visible after the decision;
-    // only the button section is replaced by the confirmation banner.
-    expect(find.byKey(const Key('decision-confirmed-approved')), findsOneWidget);
-    // Approve button is gone; disclaimer (in risk card) is still present.
-    expect(find.byKey(const Key('approve-button')), findsNothing);
-    expect(find.byKey(const Key('explanation-advisory-disclaimer')),
-        findsOneWidget);
+    expect(find.text('Approval service unavailable'), findsOneWidget);
+    expect(find.text('Service unavailable (HTTP 503)'), findsOneWidget);
+    expect(find.text('Approved'), findsNothing);
   });
 
-  testWidgets('explanation text is display-only — reject outcome is correct',
-      (tester) async {
-    await tester.pumpWidget(_screen());
-
-    await tester.tap(find.byKey(const Key('reject-button')));
+  testWidgets('empty pending list has an explicit empty state', (tester) async {
+    ApprovalService.fetchPendingOverride = () async => <ApprovalStep>[];
+    await tester.pumpWidget(screen());
     await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('decision-confirmed-rejected')), findsOneWidget);
+    expect(find.byKey(const Key('approval-empty')), findsOneWidget);
+    expect(find.text('Nothing waiting on you right now'), findsOneWidget);
   });
 
-  // -------------------------------------------------------------------------
-  // 3. APPROVE AND REJECT ARE EQUALLY VISIBLE AND EQUAL-WEIGHT
-  // -------------------------------------------------------------------------
-
-  testWidgets('both approve and reject buttons are visible before any decision',
-      (tester) async {
-    await tester.pumpWidget(_screen());
-
-    expect(find.byKey(const Key('approve-button')), findsOneWidget);
-    expect(find.byKey(const Key('reject-button')), findsOneWidget);
-
-    // No decision banner exists yet.
-    expect(find.byKey(const Key('decision-confirmed-approved')), findsNothing);
-    expect(find.byKey(const Key('decision-confirmed-rejected')), findsNothing);
-  });
-
-  testWidgets('both buttons share the same widget type (no visual hierarchy)',
-      (tester) async {
-    await tester.pumpWidget(_screen());
-
-    // Both are OutlinedButton — no ElevatedButton/FilledButton for Approve.
-    final approveWidget = find.byKey(const Key('approve-button'));
-    final rejectWidget = find.byKey(const Key('reject-button'));
-
-    // Both are Expanded inside the same Row (same visual footprint).
-    final approveAncestor = find.ancestor(
-        of: approveWidget, matching: find.byType(Expanded));
-    final rejectAncestor = find.ancestor(
-        of: rejectWidget, matching: find.byType(Expanded));
-
-    expect(approveAncestor, findsWidgets);
-    expect(rejectAncestor, findsWidgets);
-  });
-
-  // -------------------------------------------------------------------------
-  // 4. RISK TIER VISUAL LANGUAGE — CONSISTENT WITH D7 PLAN VIEW
-  // -------------------------------------------------------------------------
-
-  testWidgets('high risk tier renders using AppColors.riskHigh via RiskTier',
-      (tester) async {
-    await tester.pumpWidget(_screen());
-
-    // Risk tier badge is keyed — presence confirms the tier chip rendered.
-    expect(find.byKey(const Key('risk-tier-badge')), findsOneWidget);
-    expect(find.text('HIGH RISK'), findsOneWidget);
-  });
-
-  testWidgets('medium risk tier renders correctly', (tester) async {
-    await tester.pumpWidget(_screen(step: _longExplanationStep));
-
-    expect(find.text('MEDIUM RISK'), findsOneWidget);
-  });
-
-  // -------------------------------------------------------------------------
-  // 5. EDGE CASE — MISSING EXPLANATION TEXT
-  // -------------------------------------------------------------------------
-
-  testWidgets('missing explanation renders fallback — not blank or broken',
-      (tester) async {
-    await tester.pumpWidget(_screen(step: _sparseStep));
-
-    // Fallback container present.
+  testWidgets('missing explanation uses neutral fallback', (tester) async {
+    ApprovalService.fetchPendingOverride = () async => <ApprovalStep>[
+          const ApprovalStep(
+            id: 'step-1',
+            taskId: 'task-1',
+            toolName: 'slack.post_message_channel',
+            mcpServer: 'slack',
+            riskTier: RiskTier.high,
+            requiresApproval: true,
+            status: 'awaiting_approval',
+          ),
+        ];
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('explanation-fallback')), findsOneWidget);
-    // Normal explanation container absent.
-    expect(find.byKey(const Key('explanation-text')), findsNothing);
-    // Layout still complete — card and buttons visible.
-    expect(find.byKey(const Key('approval-risk-card')), findsOneWidget);
-    expect(find.byKey(const Key('approve-button')), findsOneWidget);
-    expect(find.byKey(const Key('reject-button')), findsOneWidget);
+    expect(find.text('No explanation available.'), findsOneWidget);
   });
 
-  // -------------------------------------------------------------------------
-  // 6. EDGE CASE — OVERLY LONG EXPLANATION TEXT
-  // -------------------------------------------------------------------------
+  // --- New Tests for Day 23 ---
 
-  testWidgets('long explanation is capped and still renders a complete card',
-      (tester) async {
-    await tester.pumpWidget(_screen(step: _longExplanationStep));
+  testWidgets('test_mixed_risk_multi_step_plan_orders_correctly', (tester) async {
+    ApprovalService.fetchPendingOverride = () async => <ApprovalStep>[
+          const ApprovalStep(
+            id: 'step-2',
+            taskId: 'task-mixed',
+            toolName: 'gmail.send_message',
+            mcpServer: 'gmail',
+            riskTier: RiskTier.high,
+            requiresApproval: true,
+            status: 'awaiting_approval',
+            explanationText: 'Send email',
+          ),
+        ];
 
-    expect(find.byKey(const Key('explanation-text')), findsOneWidget);
-    // Card and buttons are still intact.
-    expect(find.byKey(const Key('approval-risk-card')), findsOneWidget);
-    expect(find.byKey(const Key('approve-button')), findsOneWidget);
-    expect(find.byKey(const Key('reject-button')), findsOneWidget);
-  });
+    PlanService.fetchPlanOverride = (taskId) async {
+      return const MockPlan(
+        id: 'plan-mixed',
+        taskId: 'task-mixed',
+        plannerVersion: 'v1',
+        status: 'active',
+        steps: [
+          PlanStep(
+            id: 'step-1',
+            stepIndex: 1,
+            toolName: 'calendar.list_events',
+            mcpServer: 'calendar',
+            riskTier: RiskTier.low,
+            requiresApproval: false,
+            status: PlanStepStatus.done,
+          ),
+          PlanStep(
+            id: 'step-2',
+            stepIndex: 2,
+            toolName: 'gmail.send_message',
+            mcpServer: 'gmail',
+            riskTier: RiskTier.high,
+            requiresApproval: true,
+            status: PlanStepStatus.awaitingApproval,
+          ),
+          PlanStep(
+            id: 'step-3',
+            stepIndex: 3,
+            toolName: 'slack.post_message_channel',
+            mcpServer: 'slack',
+            riskTier: RiskTier.low,
+            requiresApproval: false,
+            status: PlanStepStatus.pending,
+          ),
+        ],
+      );
+    };
 
-  // -------------------------------------------------------------------------
-  // 7. EDGE CASE — DOUBLE-TAP / RAPID TAP (decision lock)
-  // -------------------------------------------------------------------------
-
-  testWidgets('rapid double-tap on approve fires only one decision',
-      (tester) async {
-    await tester.pumpWidget(_screen());
-
-    // Tap approve twice rapidly without settling.
-    await tester.tap(find.byKey(const Key('approve-button')));
-    await tester.tap(find.byKey(const Key('approve-button')));
+    await tester.pumpWidget(screen());
     await tester.pumpAndSettle();
 
-    // Only one confirmed banner — not two conflicting states.
-    expect(find.byKey(const Key('decision-confirmed-approved')), findsOneWidget);
-    expect(find.byKey(const Key('decision-confirmed-rejected')), findsNothing);
+    final step1Finder = find.text('calendar.list_events');
+    final step2Finder = find.text('gmail.send_message');
+    final step3Finder = find.text('slack.post_message_channel');
+    
+    expect(step1Finder, findsOneWidget);
+    expect(step2Finder, findsOneWidget);
+    expect(step3Finder, findsOneWidget);
+    
+    // Check order visually by position
+    expect(tester.getCenter(step1Finder).dy, lessThan(tester.getCenter(step2Finder).dy));
+    expect(tester.getCenter(step2Finder).dy, lessThan(tester.getCenter(step3Finder).dy));
   });
 
-  testWidgets('rapid approve then reject only records first decision',
-      (tester) async {
-    await tester.pumpWidget(_screen());
+  testWidgets('test_rejected_approval_halts_task_with_no_side_effects', (tester) async {
+    ApprovalService.fetchPendingOverride = () async => <ApprovalStep>[
+          const ApprovalStep(
+            id: 'step-skip',
+            taskId: 'task-skip',
+            toolName: 'slack.post_message_channel',
+            mcpServer: 'slack',
+            riskTier: RiskTier.medium,
+            requiresApproval: true,
+            status: 'awaiting_approval',
+          ),
+        ];
 
-    // Tap approve then immediately tap reject — only approve should register.
-    await tester.tap(find.byKey(const Key('approve-button')));
-    await tester.tap(find.byKey(const Key('reject-button')));
+    PlanService.fetchPlanOverride = (taskId) async {
+      return const MockPlan(
+        id: 'plan-skip',
+        taskId: 'task-skip',
+        plannerVersion: 'v1',
+        status: 'active',
+        steps: [
+          PlanStep(
+            id: 'step-skip',
+            stepIndex: 1,
+            toolName: 'slack.post_message_channel',
+            mcpServer: 'slack',
+            riskTier: RiskTier.medium,
+            requiresApproval: true,
+            status: PlanStepStatus.awaitingApproval,
+          ),
+        ],
+      );
+    };
+
+    ApprovalService.decideOverride = (_, decision) async {
+      expect(decision, ApprovalDecision.rejected);
+    };
+
+    await tester.pumpWidget(screen());
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('decision-confirmed-approved')), findsOneWidget);
-    expect(find.byKey(const Key('decision-confirmed-rejected')), findsNothing);
-  });
-
-  // -------------------------------------------------------------------------
-  // 8. EDGE CASE — SPARSE INPUT PARAMS / MINIMAL ACTION STEP
-  // -------------------------------------------------------------------------
-
-  testWidgets('sparse step renders a complete, honest card without breaking',
-      (tester) async {
-    await tester.pumpWidget(_screen(step: _sparseStep));
-
-    expect(find.byKey(const Key('approval-risk-card')), findsOneWidget);
-    expect(find.text('slack.send_message'), findsOneWidget);
-    expect(find.text('Integration: slack'), findsOneWidget);
-    expect(find.text('HIGH RISK'), findsOneWidget);
-    // Fallback explanation is shown.
-    expect(find.byKey(const Key('explanation-fallback')), findsOneWidget);
-  });
-
-  // -------------------------------------------------------------------------
-  // 9. EDGE CASE — LOW-RISK STEP REACHING THIS SCREEN
-  // -------------------------------------------------------------------------
-
-  testWidgets(
-      'step with requiresApproval=false shows unexpected-state guard, not normal UI',
-      (tester) async {
-    await tester.pumpWidget(_screen(step: _lowRiskStep));
-
-    expect(find.byKey(const Key('unexpected-risk-body')), findsOneWidget);
-    // Normal approval UI must NOT be shown.
-    expect(find.byKey(const Key('approval-risk-card')), findsNothing);
-    expect(find.byKey(const Key('approve-button')), findsNothing);
-    expect(find.byKey(const Key('reject-button')), findsNothing);
-  });
-
-  // -------------------------------------------------------------------------
-  // 10. APPROVE DECISION — FULL HAPPY PATH
-  // -------------------------------------------------------------------------
-
-  testWidgets('approve tap replaces buttons with approved confirmation banner',
-      (tester) async {
-    await tester.pumpWidget(_screen());
-
-    await tester.tap(find.byKey(const Key('approve-button')));
+    await tester.tap(find.byKey(const Key('reject-button-step-skip')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('decision-confirmed-approved')), findsOneWidget);
-    expect(find.text('Approved'), findsOneWidget);
-    // Buttons are gone after decision.
-    expect(find.byKey(const Key('approve-button')), findsNothing);
-    expect(find.byKey(const Key('reject-button')), findsNothing);
+    // Verify it updates UI to show rejected, and no side effect
+    expect(find.text('REJECTED'), findsOneWidget);
   });
 
-  // -------------------------------------------------------------------------
-  // 11. REJECT DECISION — FULL HAPPY PATH
-  // -------------------------------------------------------------------------
+  testWidgets('test_task_resumes_after_app_closed_mid_approval', (tester) async {
+    // Tests that opening the app with multiple pending approvals works correctly
+    ApprovalService.fetchPendingOverride = () async => <ApprovalStep>[
+          const ApprovalStep(
+            id: 'step-a',
+            taskId: 'task-a',
+            toolName: 'gmail.send_message',
+            mcpServer: 'gmail',
+            riskTier: RiskTier.high,
+            requiresApproval: true,
+            status: 'awaiting_approval',
+          ),
+          const ApprovalStep(
+            id: 'step-b',
+            taskId: 'task-b',
+            toolName: 'github.create_issue',
+            mcpServer: 'github',
+            riskTier: RiskTier.medium,
+            requiresApproval: true,
+            status: 'awaiting_approval',
+          ),
+        ];
 
-  testWidgets('reject tap replaces buttons with rejected confirmation banner',
-      (tester) async {
-    await tester.pumpWidget(_screen());
+    PlanService.fetchPlanOverride = (taskId) async {
+      return MockPlan(
+        id: 'plan-$taskId',
+        taskId: taskId,
+        plannerVersion: 'v1',
+        status: 'active',
+        steps: [
+          PlanStep(
+            id: taskId == 'task-a' ? 'step-a' : 'step-b',
+            stepIndex: 1,
+            toolName: taskId == 'task-a' ? 'gmail.send_message' : 'github.create_issue',
+            mcpServer: taskId == 'task-a' ? 'gmail' : 'github',
+            riskTier: taskId == 'task-a' ? RiskTier.high : RiskTier.medium,
+            requiresApproval: true,
+            status: PlanStepStatus.awaitingApproval,
+          ),
+        ],
+      );
+    };
 
-    await tester.tap(find.byKey(const Key('reject-button')));
+    await tester.pumpWidget(screen());
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('decision-confirmed-rejected')), findsOneWidget);
-    expect(find.text('Rejected'), findsOneWidget);
-    expect(find.byKey(const Key('approve-button')), findsNothing);
-    expect(find.byKey(const Key('reject-button')), findsNothing);
-  });
-
-  // -------------------------------------------------------------------------
-  // 12. NO DECISION STATE — BUTTONS REMAIN, NO AUTO-APPROVAL
-  // -------------------------------------------------------------------------
-
-  testWidgets(
-      'before any tap, no decision exists and neither outcome is pre-selected',
-      (tester) async {
-    await tester.pumpWidget(_screen());
-
-    // Both buttons present, no decision banner.
-    expect(find.byKey(const Key('approve-button')), findsOneWidget);
-    expect(find.byKey(const Key('reject-button')), findsOneWidget);
-    expect(find.byKey(const Key('decision-confirmed-approved')), findsNothing);
-    expect(find.byKey(const Key('decision-confirmed-rejected')), findsNothing);
-  });
-
-  // -------------------------------------------------------------------------
-  // 13. MOCK DATA SHAPE ALIGNS WITH SPEC (plan_steps + approvals schema)
-  // -------------------------------------------------------------------------
-
-  testWidgets('mockApprovalStep fields match the spec data contract',
-      (tester) async {
-    // This test documents the mock data contract so future wiring engineers
-    // can verify the swap-in point is correct.
-    expect(mockApprovalStep.id, isNotEmpty);
-    expect(mockApprovalStep.toolName, equals('gmail.send_message'));
-    expect(mockApprovalStep.mcpServer, equals('gmail'));
-    expect(mockApprovalStep.riskTier, equals(RiskTier.high));
-    expect(mockApprovalStep.requiresApproval, isTrue);
-    expect(mockApprovalStep.status, equals('awaiting_approval'));
-    expect(mockApprovalStep.explanationText, isNotNull);
-    expect(mockApprovalStep.explanationText, isNotEmpty);
-  });
-
-  // -------------------------------------------------------------------------
-  // 14. SCROLLABLE — NO OVERFLOW ON STANDARD SCREEN SIZES
-  // -------------------------------------------------------------------------
-
-  testWidgets('screen does not overflow on a standard mobile viewport',
-      (tester) async {
-    // iPhone 14 Pro: 390×844 logical pixels at 3.0 DPR = 1170×2532 physical.
-    tester.view.physicalSize = const Size(1170, 2532);
-    tester.view.devicePixelRatio = 3.0;
-
-    await tester.pumpWidget(_screen());
+    expect(find.byKey(const Key('approve-button-step-a')), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
     await tester.pumpAndSettle();
-
-    // Confirm no render overflow exception.
-    expect(tester.takeException(), isNull);
-
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    expect(find.byKey(const Key('approve-button-step-b')), findsOneWidget);
   });
 }

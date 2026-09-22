@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../../core/router.dart';
+import 'plan_service.dart';
 
 /// Mock plan data mirrors the eventual task_plans + plan_steps response.
 class MockPlan {
@@ -165,50 +167,146 @@ const MockPlan mockPlan = MockPlan(
   ],
 );
 
-class PlanViewScreen extends StatelessWidget {
-  const PlanViewScreen({super.key, this.plan = mockPlan});
+class PlanViewScreen extends StatefulWidget {
+  const PlanViewScreen({super.key, required this.taskId});
 
-  final MockPlan plan;
+  final String taskId;
+
+  @override
+  State<PlanViewScreen> createState() => _PlanViewScreenState();
+}
+
+class _PlanViewScreenState extends State<PlanViewScreen> {
+  MockPlan? _plan;
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPlan();
+  }
+
+  Future<void> _fetchPlan() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final plan = await PlanService.fetchPlan(widget.taskId);
+      if (!mounted) return;
+      setState(() {
+        _plan = plan;
+        _isLoading = false;
+      });
+    } on PlanNotFoundException catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _plan = null;
+        _isLoading = false;
+      });
+    } on PlanAuthException catch (_) {
+      if (!mounted) return;
+      Navigator.of(context).pushNamed(AppRoutes.signIn);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Agent Plan View')),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSpacing.screenPadding),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-            Text('Your copilot\'s plan',
-                style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Review the sequence before any action runs.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _PlanSummary(plan: plan),
-            const SizedBox(height: AppSpacing.lg),
-            if (plan.steps.isEmpty)
-              const _EmptyPlanState()
-            else
-              ...plan.steps.asMap().entries.map(
-                    (entry) => _PlanStepCard(
-                      step: entry.value,
-                      isLast: entry.key == plan.steps.length - 1,
-                    ),
-                  ),
+        child: _buildBody(context),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    if (_isLoading) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            CircularProgressIndicator(),
+            SizedBox(height: AppSpacing.md),
+            Text('Waking up backend...'),
           ],
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              const Icon(Icons.error_outline,
+                  color: AppColors.error, size: AppSpacing.xxl),
+              const SizedBox(height: AppSpacing.md),
+              Text('Failed to load plan',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: AppSpacing.xs),
+              Text(_errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: AppSpacing.lg),
+              ElevatedButton.icon(
+                onPressed: _fetchPlan,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
           ),
         ),
+      );
+    }
+
+    if (_plan == null) {
+      return const Center(child: _EmptyPlanState());
+    }
+
+    final plan = _plan!;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppSpacing.screenPadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text('Your copilot\'s plan',
+              style: Theme.of(context).textTheme.headlineMedium),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Review the sequence before any action runs.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          PlanSummary(plan: plan),
+          const SizedBox(height: AppSpacing.lg),
+          if (plan.steps.isEmpty)
+            const _EmptyPlanState()
+          else
+            ...plan.steps.asMap().entries.map(
+                  (entry) => PlanStepCard(
+                    step: entry.value,
+                    isLast: entry.key == plan.steps.length - 1,
+                  ),
+                ),
+        ],
       ),
     );
   }
 }
 
-class _PlanSummary extends StatelessWidget {
-  const _PlanSummary({required this.plan});
+class PlanSummary extends StatelessWidget {
+  const PlanSummary({super.key, required this.plan});
   final MockPlan plan;
 
   @override
@@ -234,7 +332,7 @@ class _PlanSummary extends StatelessWidget {
                 ],
               ),
             ),
-            _StatusChip(
+            StatusChip(
               label: plan.status.toUpperCase(),
               color: AppColors.primary,
               backgroundColor: AppColors.primaryLight,
@@ -246,8 +344,8 @@ class _PlanSummary extends StatelessWidget {
   }
 }
 
-class _PlanStepCard extends StatelessWidget {
-  const _PlanStepCard({required this.step, required this.isLast});
+class PlanStepCard extends StatelessWidget {
+  const PlanStepCard({super.key, required this.step, required this.isLast});
   final PlanStep step;
   final bool isLast;
 
@@ -307,12 +405,12 @@ class _PlanStepCard extends StatelessWidget {
                       spacing: AppSpacing.sm,
                       runSpacing: AppSpacing.xs,
                       children: <Widget>[
-                        _StatusChip(
+                        StatusChip(
                           label: step.riskTier.label,
                           color: step.riskTier.color,
                           backgroundColor: step.riskTier.background,
                         ),
-                        _StatusChip(
+                        StatusChip(
                           label: status.label,
                           color: status.color,
                           backgroundColor: status.backgroundColor,
@@ -349,8 +447,9 @@ class _PlanStepCard extends StatelessWidget {
   }
 }
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
+class StatusChip extends StatelessWidget {
+  const StatusChip({
+    super.key,
     required this.label,
     required this.color,
     required this.backgroundColor,

@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Firebase / Render — required from D24 / D34 (placeholders today)
     # -------------------------------------------------------------------------
-    FCM_SERVER_KEY: str = ""
+    FIREBASE_SERVICE_ACCOUNT_PATH: str = ""
     RENDER_DEPLOY_HOOK_URL: str = ""
 
     # -------------------------------------------------------------------------
