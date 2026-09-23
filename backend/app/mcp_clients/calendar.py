@@ -123,7 +123,12 @@ def _error(msg: str, latency_ms: int, code: str = "PROVIDER_ERROR") -> dict[str,
 
 
 def _rate_limited(latency_ms: int) -> dict[str, Any]:
-    return {"status": "rate_limited", "output": None, "error": "rate_limited", "latency_ms": latency_ms}
+    return {
+        "status": "rate_limited",
+        "output": None,
+        "error": "rate_limited",
+        "latency_ms": latency_ms,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +156,11 @@ def _handle_http_error(
         _log_event_calendar(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "error_code": "RATE_LIMITED", "message": "rate limited"},
+            payload={
+                "tool_name": tool_name,
+                "error_code": "RATE_LIMITED",
+                "message": "rate limited",
+            },
             latency_ms=latency_ms,
         )
         return _rate_limited(latency_ms)
@@ -161,7 +170,11 @@ def _handle_http_error(
         _log_event_calendar(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "error_code": "AUTH_EXPIRED", "message": "unauthorized — token expired or revoked"},
+            payload={
+                "tool_name": tool_name,
+                "error_code": "AUTH_EXPIRED",
+                "message": "unauthorized — token expired or revoked",
+            },
             latency_ms=latency_ms,
         )
         return _error("unauthorized — token expired or revoked", latency_ms)
@@ -171,7 +184,11 @@ def _handle_http_error(
         _log_event_calendar(
             task_id=task_id,
             event_type="error",
-            payload={"tool_name": tool_name, "error_code": "INSUFFICIENT_SCOPE", "message": "insufficient scope — user must reconnect Google account"},
+            payload={
+                "tool_name": tool_name,
+                "error_code": "INSUFFICIENT_SCOPE",
+                "message": "insufficient scope — user must reconnect Google account",
+            },
             latency_ms=latency_ms,
         )
         return _error("insufficient scope — user must reconnect Google account", latency_ms)
@@ -182,7 +199,13 @@ def _handle_http_error(
         except Exception:
             detail = ""
         msg = f"Calendar API returned HTTP {response.status_code}: {detail}".strip(": ")
-        logger.error("calendar: HTTP %d [tool=%s user=%s] %s", response.status_code, tool_name, user_id, detail)
+        logger.error(
+            "calendar: HTTP %d [tool=%s user=%s] %s",
+            response.status_code,
+            tool_name,
+            user_id,
+            detail,
+        )
         _log_event_calendar(
             task_id=task_id,
             event_type="error",
@@ -230,12 +253,22 @@ def _list_events(
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("calendar: timeout [tool=%s user=%s]", tool_name, user_id)
-        _log_event_calendar(task_id=task_id, event_type="error", payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"}, latency_ms=latency_ms)
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"},
+            latency_ms=latency_ms,
+        )
         return _error("timeout", latency_ms)
     except httpx.RequestError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("calendar: network error [tool=%s]: %s", tool_name, exc)
-        _log_event_calendar(task_id=task_id, event_type="error", payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)}, latency_ms=latency_ms)
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)},
+            latency_ms=latency_ms,
+        )
         return _error(f"network error: {exc}", latency_ms)
 
     latency_ms = int((time.monotonic() - t0) * 1000)
@@ -274,12 +307,22 @@ def _find_free_slots(
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("calendar: timeout [tool=%s user=%s]", tool_name, user_id)
-        _log_event_calendar(task_id=task_id, event_type="error", payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"}, latency_ms=latency_ms)
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"},
+            latency_ms=latency_ms,
+        )
         return _error("timeout", latency_ms)
     except httpx.RequestError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("calendar: network error [tool=%s]: %s", tool_name, exc)
-        _log_event_calendar(task_id=task_id, event_type="error", payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)}, latency_ms=latency_ms)
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)},
+            latency_ms=latency_ms,
+        )
         return _error(f"network error: {exc}", latency_ms)
 
     latency_ms = int((time.monotonic() - t0) * 1000)
@@ -341,12 +384,22 @@ def _create_event(
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("calendar: timeout [tool=%s user=%s]", tool_name, user_id)
-        _log_event_calendar(task_id=task_id, event_type="error", payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"}, latency_ms=latency_ms)
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"},
+            latency_ms=latency_ms,
+        )
         return _error("timeout", latency_ms)
     except httpx.RequestError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("calendar: network error [tool=%s]: %s", tool_name, exc)
-        _log_event_calendar(task_id=task_id, event_type="error", payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)}, latency_ms=latency_ms)
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)},
+            latency_ms=latency_ms,
+        )
         return _error(f"network error: {exc}", latency_ms)
 
     latency_ms = int((time.monotonic() - t0) * 1000)
@@ -392,12 +445,22 @@ def _update_event(
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("calendar: timeout [tool=%s user=%s]", tool_name, user_id)
-        _log_event_calendar(task_id=task_id, event_type="error", payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"}, latency_ms=latency_ms)
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"},
+            latency_ms=latency_ms,
+        )
         return _error("timeout", latency_ms)
     except httpx.RequestError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("calendar: network error [tool=%s]: %s", tool_name, exc)
-        _log_event_calendar(task_id=task_id, event_type="error", payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)}, latency_ms=latency_ms)
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)},
+            latency_ms=latency_ms,
+        )
         return _error(f"network error: {exc}", latency_ms)
 
     latency_ms = int((time.monotonic() - t0) * 1000)
@@ -438,12 +501,22 @@ def _delete_event(
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("calendar: timeout [tool=%s user=%s]", tool_name, user_id)
-        _log_event_calendar(task_id=task_id, event_type="error", payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"}, latency_ms=latency_ms)
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"},
+            latency_ms=latency_ms,
+        )
         return _error("timeout", latency_ms)
     except httpx.RequestError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("calendar: network error [tool=%s]: %s", tool_name, exc)
-        _log_event_calendar(task_id=task_id, event_type="error", payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)}, latency_ms=latency_ms)
+        _log_event_calendar(
+            task_id=task_id,
+            event_type="error",
+            payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)},
+            latency_ms=latency_ms,
+        )
         return _error(f"network error: {exc}", latency_ms)
 
     latency_ms = int((time.monotonic() - t0) * 1000)
@@ -452,7 +525,12 @@ def _delete_event(
         return err
 
     # Successful DELETE returns 204 No Content — no body to parse.
-    return {"status": "success", "output": {"deleted": True, "eventId": event_id}, "error": None, "latency_ms": latency_ms}
+    return {
+        "status": "success",
+        "output": {"deleted": True, "eventId": event_id},
+        "error": None,
+        "latency_ms": latency_ms,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -523,8 +601,13 @@ def call(
     elif tool_name == "calendar.find_free_slots":
         result = _find_free_slots(input_params, token, tool_name, user_id, task_id, t0)
 
-    elif tool_name in ("calendar.create_event_internal_only", "calendar.create_event_external_attendee"):
-        result = _create_event(input_params, token, tool_name, user_id, task_id, t0, idempotency_key)
+    elif tool_name in (
+        "calendar.create_event_internal_only",
+        "calendar.create_event_external_attendee",
+    ):
+        result = _create_event(
+            input_params, token, tool_name, user_id, task_id, t0, idempotency_key
+        )
 
     elif tool_name == "calendar.update_event":
         result = _update_event(input_params, token, tool_name, user_id, task_id, t0)
@@ -539,11 +622,18 @@ def call(
     # --- Log outcome ---------------------------------------------------------
     latency_ms = result.get("latency_ms", 0)
     if result["status"] == "success":
-        logger.info("calendar: success [tool=%s user=%s latency=%dms]", tool_name, user_id, latency_ms)
+        logger.info(
+            "calendar: success [tool=%s user=%s latency=%dms]", tool_name, user_id, latency_ms
+        )
         _log_event_calendar(
             task_id=task_id,
             event_type="tool_result",
-            payload={"tool_name": tool_name, "mcp_server": "calendar", "status": "success", "output": result["output"]},
+            payload={
+                "tool_name": tool_name,
+                "mcp_server": "calendar",
+                "status": "success",
+                "output": result["output"],
+            },
             latency_ms=latency_ms,
         )
 

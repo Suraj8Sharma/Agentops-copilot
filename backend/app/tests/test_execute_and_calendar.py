@@ -104,11 +104,15 @@ def _make_supabase_mock():
             s = MagicMock()
             s.eq.return_value = s
             s.limit.return_value = s
-            s.execute.return_value = MagicMock(data=[{
-                "access_token": GOOGLE_TOKEN,
-                "refresh_token": None,
-                "expires_at": "2099-01-01T00:00:00+00:00",
-            }])
+            s.execute.return_value = MagicMock(
+                data=[
+                    {
+                        "access_token": GOOGLE_TOKEN,
+                        "refresh_token": None,
+                        "expires_at": "2099-01-01T00:00:00+00:00",
+                    }
+                ]
+            )
             return s
 
         def insert_side_effect(payload):
@@ -176,7 +180,6 @@ def test_execute_node_runs_low_risk_calendar_tool():
     assert result["step_results"][0]["latency_ms"] >= 0
 
 
-
 # ---------------------------------------------------------------------------
 # AC-2: execute node skips high-risk steps
 # ---------------------------------------------------------------------------
@@ -219,7 +222,11 @@ def test_mcp_calendar_client_idempotency():
         idempotency_key = f"{PLAN_ID}:0"
         call(
             tool_name="calendar.create_event_internal_only",
-            input_params={"summary": "Standup", "start": {"dateTime": "2026-09-08T09:00:00Z"}, "end": {"dateTime": "2026-09-08T09:30:00Z"}},
+            input_params={
+                "summary": "Standup",
+                "start": {"dateTime": "2026-09-08T09:00:00Z"},
+                "end": {"dateTime": "2026-09-08T09:30:00Z"},
+            },
             user_id=USER_ID,
             idempotency_key=idempotency_key,
         )
@@ -379,7 +386,6 @@ def test_execute_retries_on_transient_error():
 
     assert call_count["n"] == 3
     assert result["step_results"][0]["status"] == "success"
-
 
 
 # ---------------------------------------------------------------------------
@@ -554,10 +560,11 @@ def test_calendar_client_handles_timeout():
     with (
         patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
         patch(REFRESH_PATCH, mock_supabase),
-        patch("httpx.get", side_effect=httpx_mod.TimeoutException("timed out")),  # list_events uses GET
+        patch(
+            "httpx.get", side_effect=httpx_mod.TimeoutException("timed out")
+        ),  # list_events uses GET
     ):
         result = call("calendar.list_events", {}, USER_ID, f"{PLAN_ID}:0")
 
     assert result["status"] == "error"
     assert result["error"] == "timeout"
-

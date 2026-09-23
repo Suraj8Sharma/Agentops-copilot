@@ -177,24 +177,63 @@ def _handle_gmail_http_error(
     """Return an error envelope for non-2xx responses, or None if OK."""
     if response.status_code == 429:
         logger.warning("gmail: rate limited [tool=%s user=%s]", tool_name, user_id)
-        _log_event_gmail(task_id=task_id, event_type="error", latency_ms=latency_ms,
-                         payload={"tool_name": tool_name, "error_code": "RATE_LIMITED", "message": "rate limited"})
-        return {"status": "rate_limited", "output": None, "error": "rate_limited", "latency_ms": latency_ms}
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            latency_ms=latency_ms,
+            payload={
+                "tool_name": tool_name,
+                "error_code": "RATE_LIMITED",
+                "message": "rate limited",
+            },
+        )
+        return {
+            "status": "rate_limited",
+            "output": None,
+            "error": "rate_limited",
+            "latency_ms": latency_ms,
+        }
 
     if response.status_code == 401:
         logger.warning("gmail: 401 unauthorized [tool=%s user=%s]", tool_name, user_id)
-        _log_event_gmail(task_id=task_id, event_type="error", latency_ms=latency_ms,
-                         payload={"tool_name": tool_name, "error_code": "AUTH_EXPIRED", "message": "unauthorized — token expired or revoked"})
-        return {"status": "error", "output": None, "error": "unauthorized — token expired or revoked", "latency_ms": latency_ms}
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            latency_ms=latency_ms,
+            payload={
+                "tool_name": tool_name,
+                "error_code": "AUTH_EXPIRED",
+                "message": "unauthorized — token expired or revoked",
+            },
+        )
+        return {
+            "status": "error",
+            "output": None,
+            "error": "unauthorized — token expired or revoked",
+            "latency_ms": latency_ms,
+        }
 
     if response.status_code == 403:
         logger.warning("gmail: 403 forbidden [tool=%s user=%s]", tool_name, user_id)
-        _log_event_gmail(task_id=task_id, event_type="error", latency_ms=latency_ms,
-                         payload={"tool_name": tool_name, "error_code": "INSUFFICIENT_SCOPE",
-                                  "message": "insufficient scope — user must reconnect Google with mail-send permission"})
-        return {"status": "error", "output": None,
-                "error": "insufficient scope — user must reconnect Google with mail-send permission",
-                "latency_ms": latency_ms}
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            latency_ms=latency_ms,
+            payload={
+                "tool_name": tool_name,
+                "error_code": "INSUFFICIENT_SCOPE",
+                "message": (
+                    "insufficient scope — user must reconnect "
+                    "Google with mail-send permission"
+                ),
+            },
+        )
+        return {
+            "status": "error",
+            "output": None,
+            "error": "insufficient scope — user must reconnect Google with mail-send permission",
+            "latency_ms": latency_ms,
+        }
 
     if not response.is_success:
         try:
@@ -202,9 +241,15 @@ def _handle_gmail_http_error(
         except Exception:
             detail = ""
         msg = f"Gmail API returned HTTP {response.status_code}: {detail}".strip(": ")
-        logger.error("gmail: HTTP %d [tool=%s user=%s] %s", response.status_code, tool_name, user_id, detail)
-        _log_event_gmail(task_id=task_id, event_type="error", latency_ms=latency_ms,
-                         payload={"tool_name": tool_name, "error_code": "PROVIDER_ERROR", "message": msg})
+        logger.error(
+            "gmail: HTTP %d [tool=%s user=%s] %s", response.status_code, tool_name, user_id, detail
+        )
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            latency_ms=latency_ms,
+            payload={"tool_name": tool_name, "error_code": "PROVIDER_ERROR", "message": msg},
+        )
         return {"status": "error", "output": None, "error": msg, "latency_ms": latency_ms}
 
     return None  # response is OK
@@ -239,19 +284,34 @@ def _call_list_messages(
         params["labelIds"] = input_params["labelIds"]
 
     try:
-        response = httpx.get(_THREADS_URL, params=params, headers=_auth_headers_gmail(token), timeout=_TIMEOUT)
+        response = httpx.get(
+            _THREADS_URL, params=params, headers=_auth_headers_gmail(token), timeout=_TIMEOUT
+        )
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("gmail: timeout [tool=%s user=%s]", tool_name, user_id)
-        _log_event_gmail(task_id=task_id, event_type="error", latency_ms=latency_ms,
-                         payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"})
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            latency_ms=latency_ms,
+            payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"},
+        )
         return {"status": "error", "output": None, "error": "timeout", "latency_ms": latency_ms}
     except httpx.RequestError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("gmail: network error [tool=%s]: %s", tool_name, exc)
-        _log_event_gmail(task_id=task_id, event_type="error", latency_ms=latency_ms,
-                         payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)})
-        return {"status": "error", "output": None, "error": f"network error: {exc}", "latency_ms": latency_ms}
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            latency_ms=latency_ms,
+            payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)},
+        )
+        return {
+            "status": "error",
+            "output": None,
+            "error": f"network error: {exc}",
+            "latency_ms": latency_ms,
+        }
 
     latency_ms = int((time.monotonic() - t0) * 1000)
     err = _handle_gmail_http_error(response, tool_name, user_id, task_id, latency_ms)
@@ -272,7 +332,12 @@ def _call_get_message(
     message_id = input_params.get("id") or input_params.get("messageId")
     if not message_id:
         latency_ms = int((time.monotonic() - t0) * 1000)
-        return {"status": "error", "output": None, "error": "missing required param: id", "latency_ms": latency_ms}
+        return {
+            "status": "error",
+            "output": None,
+            "error": "missing required param: id",
+            "latency_ms": latency_ms,
+        }
 
     params: dict[str, Any] = {}
     if "format" in input_params:
@@ -280,19 +345,34 @@ def _call_get_message(
 
     url = f"{_MESSAGES_URL}/{message_id}"
     try:
-        response = httpx.get(url, params=params, headers=_auth_headers_gmail(token), timeout=_TIMEOUT)
+        response = httpx.get(
+            url, params=params, headers=_auth_headers_gmail(token), timeout=_TIMEOUT
+        )
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("gmail: timeout [tool=%s user=%s]", tool_name, user_id)
-        _log_event_gmail(task_id=task_id, event_type="error", latency_ms=latency_ms,
-                         payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"})
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            latency_ms=latency_ms,
+            payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"},
+        )
         return {"status": "error", "output": None, "error": "timeout", "latency_ms": latency_ms}
     except httpx.RequestError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("gmail: network error [tool=%s]: %s", tool_name, exc)
-        _log_event_gmail(task_id=task_id, event_type="error", latency_ms=latency_ms,
-                         payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)})
-        return {"status": "error", "output": None, "error": f"network error: {exc}", "latency_ms": latency_ms}
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            latency_ms=latency_ms,
+            payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)},
+        )
+        return {
+            "status": "error",
+            "output": None,
+            "error": f"network error: {exc}",
+            "latency_ms": latency_ms,
+        }
 
     latency_ms = int((time.monotonic() - t0) * 1000)
     err = _handle_gmail_http_error(response, tool_name, user_id, task_id, latency_ms)
@@ -315,29 +395,46 @@ def _call_create_draft(
     to_str = ", ".join(to_field) if isinstance(to_field, list) else str(to_field)
 
     from email.mime.text import MIMEText  # already imported at top-level; safe to re-import
+
     msg = MIMEText(input_params.get("body", ""), "plain")
     msg["To"] = to_str
     msg["Subject"] = input_params.get("subject", "")
 
     import base64
+
     raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
 
     body = {"message": {"raw": raw_b64}}
 
     try:
-        response = httpx.post(_DRAFTS_URL, json=body, headers=_auth_headers_gmail(token), timeout=_TIMEOUT)
+        response = httpx.post(
+            _DRAFTS_URL, json=body, headers=_auth_headers_gmail(token), timeout=_TIMEOUT
+        )
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("gmail: timeout [tool=%s user=%s]", tool_name, user_id)
-        _log_event_gmail(task_id=task_id, event_type="error", latency_ms=latency_ms,
-                         payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"})
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            latency_ms=latency_ms,
+            payload={"tool_name": tool_name, "error_code": "TIMEOUT", "message": "timeout"},
+        )
         return {"status": "error", "output": None, "error": "timeout", "latency_ms": latency_ms}
     except httpx.RequestError as exc:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("gmail: network error [tool=%s]: %s", tool_name, exc)
-        _log_event_gmail(task_id=task_id, event_type="error", latency_ms=latency_ms,
-                         payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)})
-        return {"status": "error", "output": None, "error": f"network error: {exc}", "latency_ms": latency_ms}
+        _log_event_gmail(
+            task_id=task_id,
+            event_type="error",
+            latency_ms=latency_ms,
+            payload={"tool_name": tool_name, "error_code": "NETWORK_ERROR", "message": str(exc)},
+        )
+        return {
+            "status": "error",
+            "output": None,
+            "error": f"network error: {exc}",
+            "latency_ms": latency_ms,
+        }
 
     latency_ms = int((time.monotonic() - t0) * 1000)
     err = _handle_gmail_http_error(response, tool_name, user_id, task_id, latency_ms)
@@ -661,7 +758,9 @@ def call(
         # Log success outcome
         if result["status"] == "success":
             latency_ms = result.get("latency_ms", 0)
-            logger.info("gmail: success [tool=%s user=%s latency=%dms]", tool_name, user_id, latency_ms)
+            logger.info(
+                "gmail: success [tool=%s user=%s latency=%dms]", tool_name, user_id, latency_ms
+            )
             _log_event_gmail(
                 task_id=task_id,
                 event_type="tool_result",

@@ -8,7 +8,7 @@ REST API directly.  send_message was already REST and is unchanged.
 Test map vs. spec acceptance criteria (d15-gmail-mcp-client.md):
   test_gmail_client_routes_send_to_gmail_api           -> AC-1
   test_gmail_client_routes_read_to_rest_api            -> AC-2 (updated: REST not MCP)
-  test_gmail_list_messages_uses_threads_endpoint       -> AC-3 (updated: threads GET not search_threads RPC)
+  test_gmail_list_messages_uses_threads_endpoint       -> AC-3 (updated: threads GET not RPC)
   test_gmail_send_uses_recipient_own_token             -> AC-4
   test_gmail_send_skips_duplicate_if_step_already_done -> AC-5
   test_gmail_send_403_returns_clear_reauth_error       -> AC-6
@@ -44,11 +44,15 @@ def _make_token_supabase(token=GOOGLE_TOKEN):
     chain.single.return_value = chain
     chain.limit.return_value = chain
     chain.execute.return_value = MagicMock(
-        data=[{
-            "access_token": token,
-            "refresh_token": None,
-            "expires_at": "2099-01-01T00:00:00+00:00",
-        }] if token else []
+        data=[
+            {
+                "access_token": token,
+                "refresh_token": None,
+                "expires_at": "2099-01-01T00:00:00+00:00",
+            }
+        ]
+        if token
+        else []
     )
     mock.table.return_value.select.return_value = chain
     return mock
@@ -250,7 +254,8 @@ def test_gmail_draft_email_success():
     mock_sb = _make_token_supabase()
     # Gmail REST API /drafts returns the draft object directly, not a JSON-RPC envelope
     draft_resp = _make_httpx_response(
-        200, {"id": "draft_abc", "message": {"id": "msg_abc", "threadId": "t1", "labelIds": ["DRAFT"]}}
+        200,
+        {"id": "draft_abc", "message": {"id": "msg_abc", "threadId": "t1", "labelIds": ["DRAFT"]}},
     )
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),

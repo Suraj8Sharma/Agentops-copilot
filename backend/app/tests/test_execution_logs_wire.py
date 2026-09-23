@@ -75,11 +75,15 @@ def _supabase_with_token(token: str) -> MagicMock:
     sel.eq.return_value = sel
     sel.single.return_value = sel
     sel.limit.return_value = sel
-    sel.execute.return_value = MagicMock(data=[{
-        "access_token": token,
-        "refresh_token": None,
-        "expires_at": "2099-01-01T00:00:00+00:00",
-    }])
+    sel.execute.return_value = MagicMock(
+        data=[
+            {
+                "access_token": token,
+                "refresh_token": None,
+                "expires_at": "2099-01-01T00:00:00+00:00",
+            }
+        ]
+    )
     mock.table.return_value.select.return_value = sel
 
     # Insert chain (for execution_logs writes)
@@ -110,11 +114,15 @@ def _supabase_insert_raises() -> MagicMock:
     sel.eq.return_value = sel
     sel.single.return_value = sel
     sel.limit.return_value = sel
-    sel.execute.return_value = MagicMock(data=[{
-        "access_token": GOOGLE_TOKEN,
-        "refresh_token": None,
-        "expires_at": "2099-01-01T00:00:00+00:00",
-    }])
+    sel.execute.return_value = MagicMock(
+        data=[
+            {
+                "access_token": GOOGLE_TOKEN,
+                "refresh_token": None,
+                "expires_at": "2099-01-01T00:00:00+00:00",
+            }
+        ]
+    )
     mock.table.return_value.select.return_value = sel
 
     ins = MagicMock()
@@ -272,7 +280,6 @@ class TestCalendarExecutionLogs:
 
         # Despite the insert raising, call() must not propagate
         assert result["status"] == "success"
-
 
 
 # ===========================================================================
