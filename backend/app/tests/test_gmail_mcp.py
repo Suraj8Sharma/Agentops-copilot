@@ -1,19 +1,22 @@
-"""Tests for the D15 Gmail MCP client.
+"""Tests for the Gmail REST client (updated from D15 MCP client).
 
 All external calls (Supabase, httpx) are mocked - no live DB or network needed.
 
+Read/draft tools (list_messages, get_message, create_draft) now use the Gmail
+REST API directly.  send_message was already REST and is unchanged.
+
 Test map vs. spec acceptance criteria (d15-gmail-mcp-client.md):
   test_gmail_client_routes_send_to_gmail_api           -> AC-1
-  test_gmail_client_routes_read_to_mcp                 -> AC-2
-  test_gmail_list_messages_maps_to_search_threads      -> AC-3
+  test_gmail_client_routes_read_to_rest_api            -> AC-2 (updated: REST not MCP)
+  test_gmail_list_messages_uses_threads_endpoint       -> AC-3 (updated: threads GET not RPC)
   test_gmail_send_uses_recipient_own_token             -> AC-4
   test_gmail_send_skips_duplicate_if_step_already_done -> AC-5
   test_gmail_send_403_returns_clear_reauth_error       -> AC-6
-  test_gmail_draft_email_success                       -> AC-7
+  test_gmail_draft_email_success                       -> AC-7 (updated: REST response shape)
   test_gmail_send_respects_approval_gate               -> AC-8
   test_gmail_mcp_token_missing_returns_error           -> AC-9
-  test_gmail_mcp_401_returns_error                     -> AC-10
-  test_gmail_mcp_429_returns_rate_limited              -> AC-11
+  test_gmail_mcp_401_returns_error                     -> AC-10 (updated: uses httpx.get)
+  test_gmail_mcp_429_returns_rate_limited              -> AC-11 (updated: uses httpx.get)
   test_gmail_unknown_tool_returns_error                -> AC-12
   test_call_tool_routes_gmail_server                   -> AC-13
 """
@@ -41,11 +44,15 @@ def _make_token_supabase(token=GOOGLE_TOKEN):
     chain.single.return_value = chain
     chain.limit.return_value = chain
     chain.execute.return_value = MagicMock(
-        data=[{
-            "access_token": token,
-            "refresh_token": None,
-            "expires_at": "2099-01-01T00:00:00+00:00",
-        }] if token else []
+        data=[
+            {
+                "access_token": token,
+                "refresh_token": None,
+                "expires_at": "2099-01-01T00:00:00+00:00",
+            }
+        ]
+        if token
+        else []
     )
     mock.table.return_value.select.return_value = chain
     return mock
@@ -90,8 +97,8 @@ def _make_state(plan=None, risk_flags=None, error=None, plan_id=PLAN_ID):
 
 # AC-1
 def test_gmail_client_routes_send_to_gmail_api():
-    """gmail.send_message must POST to GMAIL_SEND_URL, not GMAIL_MCP_URL."""
-    from app.mcp_clients.gmail import GMAIL_MCP_URL, GMAIL_SEND_URL, call
+    """gmail.send_message must POST to GMAIL_SEND_URL, not any MCP endpoint."""
+    from app.mcp_clients.gmail import GMAIL_SEND_URL, call
 
     mock_sb = _make_token_supabase()
     send_resp = _make_httpx_response(200, {"id": "msg123", "threadId": "t1"})
@@ -114,46 +121,53 @@ def test_gmail_client_routes_send_to_gmail_api():
         )
     assert result["status"] == "success"
     assert GMAIL_SEND_URL in posted_urls
-    assert GMAIL_MCP_URL not in posted_urls
+    # Ensure we only hit the send endpoint, not any MCP server
+    assert all("mcp" not in url for url in posted_urls)
 
 
 # AC-2
-def test_gmail_client_routes_read_to_mcp():
-    """gmail.list_messages must POST to GMAIL_MCP_URL, not GMAIL_SEND_URL."""
-    from app.mcp_clients.gmail import GMAIL_MCP_URL, GMAIL_SEND_URL, call
+def test_gmail_client_routes_read_to_rest_api():
+    """gmail.list_messages must GET the Gmail REST threads endpoint, not any MCP server."""
+    from app.mcp_clients.gmail import _THREADS_URL, GMAIL_SEND_URL, call
 
     mock_sb = _make_token_supabase()
-    mcp_resp = _make_httpx_mcp_success()
-    posted_urls = []
+    threads_resp = _make_httpx_response(200, {"threads": [], "resultSizeEstimate": 0})
+    got_urls = []
 
-    def post_side(url, **kw):
-        posted_urls.append(url)
-        return mcp_resp
+    def get_side(url, **kw):
+        got_urls.append(url)
+        return threads_resp
 
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
         patch(REFRESH_PATCH, mock_sb),
-        patch("httpx.post", side_effect=post_side),
+        patch("httpx.get", side_effect=get_side),
     ):
-        result = call("gmail.list_messages", {"query": "is:unread"}, USER_ID, IDEMPOTENCY_KEY)
+        result = call("gmail.list_messages", {"q": "is:unread"}, USER_ID, IDEMPOTENCY_KEY)
     assert result["status"] == "success"
-    assert GMAIL_MCP_URL in posted_urls
-    assert GMAIL_SEND_URL not in posted_urls
+    assert _THREADS_URL in got_urls
+    assert GMAIL_SEND_URL not in got_urls
+    assert all("mcp" not in url for url in got_urls)
 
 
 # AC-3
-def test_gmail_list_messages_maps_to_search_threads():
-    """The MCP JSON-RPC payload for gmail.list_messages uses name=search_threads."""
+def test_gmail_list_messages_uses_threads_endpoint():
+    """gmail.list_messages GETs /users/me/threads with the q param forwarded."""
     from app.mcp_clients.gmail import call
 
     mock_sb = _make_token_supabase()
+    threads_resp = _make_httpx_response(200, {"threads": [{"id": "t1"}], "resultSizeEstimate": 1})
+
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
         patch(REFRESH_PATCH, mock_sb),
-        patch("httpx.post", return_value=_make_httpx_mcp_success()) as mp,
+        patch("httpx.get", return_value=threads_resp) as mg,
     ):
-        call("gmail.list_messages", {"query": "is:unread"}, USER_ID, IDEMPOTENCY_KEY)
-    assert mp.call_args.kwargs["json"]["params"]["name"] == "search_threads"
+        call("gmail.list_messages", {"q": "is:unread", "maxResults": 10}, USER_ID, IDEMPOTENCY_KEY)
+    # Verify the q param was forwarded, not a JSON-RPC envelope
+    call_kwargs = mg.call_args
+    assert call_kwargs.kwargs.get("params", {}).get("q") == "is:unread"
+    assert call_kwargs.kwargs.get("params", {}).get("maxResults") == 10
 
 
 # AC-4
@@ -238,8 +252,10 @@ def test_gmail_draft_email_success():
     from app.mcp_clients.gmail import call
 
     mock_sb = _make_token_supabase()
+    # Gmail REST API /drafts returns the draft object directly, not a JSON-RPC envelope
     draft_resp = _make_httpx_response(
-        200, {"jsonrpc": "2.0", "id": IDEMPOTENCY_KEY, "result": {"draftId": "draft_abc"}}
+        200,
+        {"id": "draft_abc", "message": {"id": "msg_abc", "threadId": "t1", "labelIds": ["DRAFT"]}},
     )
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
@@ -253,7 +269,7 @@ def test_gmail_draft_email_success():
             IDEMPOTENCY_KEY,
         )
     assert result["status"] == "success"
-    assert result["output"] == {"draftId": "draft_abc"}
+    assert result["output"]["id"] == "draft_abc"
     assert isinstance(result["latency_ms"], int) and result["latency_ms"] >= 0
 
 
@@ -289,16 +305,18 @@ def test_gmail_mcp_token_missing_returns_error():
         patch("app.mcp_clients.gmail.supabase", mock_sb),
         patch(REFRESH_PATCH, mock_sb),
         patch("httpx.post") as mp,
+        patch("httpx.get") as mg,
     ):
         result = call("gmail.list_messages", {}, USER_ID, IDEMPOTENCY_KEY)
     mp.assert_not_called()
+    mg.assert_not_called()
     assert result["status"] == "error"
     assert "token" in result["error"]
 
 
 # AC-10
 def test_gmail_mcp_401_returns_error():
-    """A 401 from Gmail MCP maps to status=error with unauthorized message."""
+    """A 401 from Gmail REST maps to status=error with unauthorized message."""
     from app.mcp_clients.gmail import call
 
     mock_sb = _make_token_supabase()
@@ -307,7 +325,7 @@ def test_gmail_mcp_401_returns_error():
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
         patch(REFRESH_PATCH, mock_sb),
-        patch("httpx.post", return_value=r),
+        patch("httpx.get", return_value=r),  # list_messages uses GET
     ):
         result = call("gmail.list_messages", {}, USER_ID, IDEMPOTENCY_KEY)
     assert result["status"] == "error"
@@ -316,7 +334,7 @@ def test_gmail_mcp_401_returns_error():
 
 # AC-11
 def test_gmail_mcp_429_returns_rate_limited():
-    """A 429 from Gmail MCP maps to status=rate_limited."""
+    """A 429 from Gmail REST maps to status=rate_limited."""
     from app.mcp_clients.gmail import call
 
     mock_sb = _make_token_supabase()
@@ -325,7 +343,7 @@ def test_gmail_mcp_429_returns_rate_limited():
     with (
         patch("app.mcp_clients.gmail.supabase", mock_sb),
         patch(REFRESH_PATCH, mock_sb),
-        patch("httpx.post", return_value=r),
+        patch("httpx.get", return_value=r),  # list_messages uses GET
     ):
         result = call("gmail.list_messages", {}, USER_ID, IDEMPOTENCY_KEY)
     assert result["status"] == "rate_limited"
