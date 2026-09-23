@@ -1,11 +1,11 @@
 {
-    "name": "agentops_copilot",
-    "short_name": "agentops_copilot",
+    "name": "AgentOps Copilot",
+    "short_name": "AgentOps",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0B0F19",
+    "theme_color": "#2563EB",
+    "description": "AgentOps Copilot — Multi-agent personal assistant.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

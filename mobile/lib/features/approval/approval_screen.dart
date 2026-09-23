@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/router.dart';
 import '../../core/theme.dart';
+import '../../core/tts_service.dart';
 export 'approval_models.dart';
 import 'approval_models.dart';
 import 'approval_service.dart';
@@ -97,8 +98,34 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    TtsService.stop();
+    super.dispose();
+  }
+
+  Future<void> _toggleReadAloud(ApprovalStep step) async {
+    if (TtsService.isSpeaking) {
+      await TtsService.stop();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    final speech = StringBuffer();
+    speech.write('Approval required for ${step.toolName}. ');
+    speech.write('Risk tier is ${step.riskTier.name}. ');
+    if (step.explanationText != null && step.explanationText!.isNotEmpty) {
+      speech.write(step.explanationText!);
+    }
+
+    await TtsService.speak(speech.toString());
+    if (mounted) setState(() {});
+  }
+
   Future<void> _decide(ApprovalStep step, ApprovalDecision decision) async {
+    await TtsService.stop();
     if (_processing.contains(step.id)) return;
+
     setState(() => _processing.add(step.id));
     try {
       await ApprovalService.decide(step.id, decision);
@@ -282,6 +309,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
   }
 
   Widget _buildApprovalControls(BuildContext context, ApprovalStep step) {
+    final isSpeaking = TtsService.isSpeaking;
     return Card(
       color: AppColors.riskMediumBg,
       child: Padding(
@@ -289,8 +317,24 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Requires your approval to run',
-                style: Theme.of(context).textTheme.bodySmall),
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Requires your approval to run',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ),
+                IconButton(
+                  key: Key('approval-tts-button-${step.id}'),
+                  icon: Icon(
+                    isSpeaking ? Icons.volume_off : Icons.volume_up_outlined,
+                    size: 20,
+                    color: isSpeaking ? AppColors.error : AppColors.neutral700,
+                  ),
+                  tooltip: isSpeaking ? 'Stop reading' : 'Read aloud',
+                  onPressed: () => _toggleReadAloud(step),
+                ),
+              ],
+            ),
             const SizedBox(height: AppSpacing.sm),
             Text('What this action will do',
                 style: Theme.of(context).textTheme.labelMedium),
@@ -314,6 +358,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       ),
     );
   }
+
 }
 
 class _ScreenHeader extends StatelessWidget {

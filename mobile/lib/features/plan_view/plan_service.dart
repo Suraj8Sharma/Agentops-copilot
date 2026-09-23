@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../core/api_config.dart';
 import 'plan_view_screen.dart' show MockPlan, PlanStep, PlanStepStatus;
 import '../../core/theme.dart' show RiskTier;
 import '../home/task_service.dart';
 
 class PlanService {
-  static const String baseUrl =
-      String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8000');
+  static String get baseUrl => ApiConfig.baseUrl;
 
   static Future<MockPlan> Function(String taskId)? fetchPlanOverride;
 

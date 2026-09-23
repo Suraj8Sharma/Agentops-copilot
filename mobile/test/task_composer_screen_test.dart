@@ -34,14 +34,8 @@ void main() {
 
     expect(find.byKey(const Key('task-input')), findsOneWidget);
     expect(find.text('Submit task'), findsOneWidget);
-    expect(find.text('Voice mode coming soon'), findsOneWidget);
-    expect(
-        tester
-            .widget<OutlinedButton>(
-              find.byKey(const Key('voice-mode-placeholder')),
-            )
-            .onPressed,
-        isNull);
+    expect(find.byKey(const Key('voice-mode-button')), findsOneWidget);
+    expect(find.text('Voice mode (Speak task)'), findsOneWidget);
   });
 
   testWidgets('blocks an empty submission', (tester) async {

@@ -16,6 +16,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import '../../core/api_config.dart';
 import '../../core/theme.dart';
 import '../home/task_service.dart' show TaskService;
 import 'activity_log_models.dart';
@@ -31,10 +32,7 @@ class ActivityLogException implements Exception {
 class ActivityLogService {
   ActivityLogService._();
 
-  static const String _baseUrl = String.fromEnvironment(
-    'API_URL',
-    defaultValue: 'http://10.0.2.2:8000',
-  );
+  static String get _baseUrl => ApiConfig.baseUrl;
 
   // Override hook — lets tests inject a custom list without a network.
   static Future<List<ActivityLogEntry>> Function({

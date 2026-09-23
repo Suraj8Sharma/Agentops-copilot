@@ -78,6 +78,24 @@ def _generate_synthetic_wav_bytes(duration_seconds: float = 1.0, sample_rate: in
 # ---------------------------------------------------------------------------
 
 
+from app.voice.audio_utils import (
+    get_audio_extension,
+    normalize_language_code,
+    temporary_audio_file,
+    validate_audio_metadata,
+)
+
+def test_normalize_language_code():
+    assert normalize_language_code("en-US") == "en"
+    assert normalize_language_code("en-GB") == "en"
+    assert normalize_language_code("hi-IN") == "hi"
+    assert normalize_language_code("hi") == "hi"
+    assert normalize_language_code("en-US (Auto-detect)") is None
+    assert normalize_language_code("auto") is None
+    assert normalize_language_code("") is None
+    assert normalize_language_code(None) is None
+
+
 def test_get_audio_extension():
     assert get_audio_extension("voice_memo.wav", "audio/wav") == ".wav"
     assert get_audio_extension("command.mp3", "audio/mpeg") == ".mp3"
@@ -99,7 +117,7 @@ def test_validate_audio_metadata_unsupported_raises_400():
 
 
 @pytest.mark.asyncio
-async def test_temporary_audio_file_guarantees_cleanup():
+async def test_temporary_audio_file_guarantees_cleanup_and_writes_bytes():
     wav_bytes = _generate_synthetic_wav_bytes(0.5)
 
     from starlette.datastructures import Headers, UploadFile
@@ -118,9 +136,14 @@ async def test_temporary_audio_file_guarantees_cleanup():
         assert os.path.exists(temp_path)
         assert size_bytes == len(wav_bytes)
         assert ext == ".wav"
+        # Verify bytes were actually written to disk
+        with open(temp_path, "rb") as f:
+            written_bytes = f.read()
+        assert written_bytes == wav_bytes
 
     # Verify file was cleaned up after exiting context manager
     assert not os.path.exists(captured_path)
+
 
 
 # ---------------------------------------------------------------------------

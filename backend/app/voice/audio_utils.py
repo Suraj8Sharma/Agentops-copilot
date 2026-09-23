@@ -138,6 +138,30 @@ def get_audio_duration_seconds(file_path: str) -> float | None:
     return None
 
 
+def normalize_language_code(language: str | None) -> str | None:
+    """Normalize input language string to ISO 639-1 code suitable for Whisper.
+
+    Examples:
+        'en-US' -> 'en'
+        'hi-IN' -> 'hi'
+        'en-US (Auto-detect)' -> None
+        'auto' -> None
+        '' -> None
+    """
+    if not language:
+        return None
+    cleaned = language.strip().lower()
+    if cleaned in ("auto", "auto-detect", "none", "null") or "auto" in cleaned:
+        return None
+    if cleaned.startswith("en"):
+        return "en"
+    if cleaned.startswith("hi"):
+        return "hi"
+    # Return 2-letter prefix if available
+    parts = cleaned.split("-")[0].split("_")[0]
+    return parts if len(parts) == 2 else None
+
+
 @contextlib.asynccontextmanager
 async def temporary_audio_file(
     file: UploadFile,
@@ -172,7 +196,7 @@ async def temporary_audio_file(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                         detail=f"Audio file exceeds maximum permitted size of {max_mb} MB.",
                     )
-                    temp_file.write(chunk)
+                temp_file.write(chunk)
 
         if bytes_written == 0:
             raise HTTPException(
@@ -181,6 +205,7 @@ async def temporary_audio_file(
             )
 
         yield temp_path, bytes_written, ext
+
 
     finally:
         # Guarantee removal of the temporary file from disk

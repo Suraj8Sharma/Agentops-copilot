@@ -70,6 +70,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("AgentOps Copilot API shutting down.")
 
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="AgentOps Copilot API",
     description="Backend for AgentOps Copilot — AI-powered mobile DevOps companion.",
@@ -79,6 +81,15 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 
 # ---------------------------------------------------------------------------

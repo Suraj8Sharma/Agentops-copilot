@@ -21,7 +21,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from pydantic import BaseModel, Field
 
 from app.core.security import CurrentUser, get_current_user
-from app.voice.audio_utils import temporary_audio_file, validate_audio_upload
+from app.voice.audio_utils import (
+    normalize_language_code,
+    temporary_audio_file,
+    validate_audio_upload,
+)
 from app.voice.stt_provider import STTResult, get_stt_provider
 
 logger = logging.getLogger(__name__)
@@ -85,11 +89,12 @@ async def transcribe_audio(
     )
 
     try:
+        norm_lang = normalize_language_code(language)
         async with temporary_audio_file(file) as (temp_path, size_bytes, ext):
             provider = get_stt_provider()
             stt_result: STTResult = await provider.transcribe(
                 audio_path=temp_path,
-                language=language if (language and language.strip()) else None,
+                language=norm_lang,
             )
     except HTTPException:
         # Re-raise known validation HTTPExceptions cleanly

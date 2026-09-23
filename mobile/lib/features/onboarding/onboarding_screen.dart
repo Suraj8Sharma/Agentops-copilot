@@ -118,24 +118,35 @@ class _SplashView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        backgroundColor: AppColors.primary,
+        backgroundColor: AppColors.neutral900,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight,
-                  borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppSpacing.lg),
+                child: Image.asset(
+                  'assets/logo/app_logo.png',
+                  width: 96,
+                  height: 96,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight,
+                      borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+                    ),
+                    child: const Icon(Icons.auto_awesome,
+                        color: AppColors.primary, size: AppSpacing.xl),
+                  ),
                 ),
-                child: const Icon(Icons.auto_awesome,
-                    color: AppColors.primary, size: AppSpacing.xl),
               ),
-              const SizedBox(height: AppSpacing.md),
-              Text('AgentOps Copilot',
-                  style: AppTypography.textTheme.headlineMedium!
-                      .copyWith(color: AppColors.neutral0)),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                'AgentOps Copilot',
+                style: AppTypography.textTheme.headlineMedium!
+                    .copyWith(color: AppColors.neutral0, fontWeight: FontWeight.bold),
+              ),
             ],
           ),
         ),

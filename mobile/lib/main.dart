@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'core/api_config.dart';
 import 'core/theme.dart';
 import 'core/router.dart';
 import 'features/auth/auth_service.dart';
@@ -8,6 +9,8 @@ import 'features/oauth_connections/oauth_connection_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await ApiConfig.loadSavedBaseUrl();
 
   OAuthConnectionService.authorizationUrlHandler = (Uri uri) async {
     if (await canLaunchUrl(uri)) {

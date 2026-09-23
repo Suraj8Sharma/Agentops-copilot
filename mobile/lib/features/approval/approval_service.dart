@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../core/api_config.dart';
 import '../home/task_service.dart';
 import 'approval_models.dart';
 
@@ -21,10 +22,7 @@ class ApprovalServiceException implements Exception {
 }
 
 class ApprovalService {
-  static const String baseUrl = String.fromEnvironment(
-    'API_URL',
-    defaultValue: 'http://10.0.2.2:8000',
-  );
+  static String get baseUrl => ApiConfig.baseUrl;
 
   static Future<List<ApprovalStep>> Function()? fetchPendingOverride;
   static Future<void> Function(String, ApprovalDecision)? decideOverride;

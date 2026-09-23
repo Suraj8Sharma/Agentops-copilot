@@ -13,10 +13,16 @@
 // - Fallback button to switch seamlessly back to typed input
 
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../../core/router.dart';
 import '../../core/theme.dart';
+import '../home/task_service.dart';
+import 'voice_service.dart';
 
 enum VoiceState {
   idle,
@@ -33,6 +39,10 @@ enum VoiceState {
 class VoiceInputScreen extends StatefulWidget {
   const VoiceInputScreen({super.key});
 
+  /// Test seams
+  static Future<bool> Function()? permissionOverride;
+  static Future<List<int>> Function()? recordingOverride;
+
   @override
   State<VoiceInputScreen> createState() => _VoiceInputScreenState();
 }
@@ -45,9 +55,12 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
   bool _isPlayingAudio = false;
   String? _errorMessage;
   String _detectedLanguage = 'en';
-  double? _confidence = 0.94;
-  int _processingTimeMs = 840;
+  double? _confidence;
+  int _processingTimeMs = 0;
+  List<int> _recordedAudioBytes = <int>[];
 
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  String? _currentRecordingPath;
   late final TextEditingController _transcriptController;
   late final AnimationController _pulseController;
 
@@ -66,15 +79,66 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
     _recordingTimer?.cancel();
     _transcriptController.dispose();
     _pulseController.dispose();
+    _audioRecorder.dispose();
     super.dispose();
   }
 
-  void _startRecording() {
+  Future<void> _startRecording() async {
+    if (VoiceInputScreen.permissionOverride != null) {
+      final granted = await VoiceInputScreen.permissionOverride!();
+      if (!granted) {
+        if (!mounted) return;
+        setState(() {
+          _state = VoiceState.permissionDenied;
+          _errorMessage = 'Microphone permission was denied. Enable permission to use voice input.';
+        });
+        _showPermissionDialog();
+        return;
+      }
+    } else {
+      final hasPermission = await _audioRecorder.hasPermission();
+      if (!hasPermission) {
+        if (!mounted) return;
+        setState(() {
+          _state = VoiceState.permissionDenied;
+          _errorMessage = 'Microphone permission was denied. Enable permission to use voice input.';
+        });
+        _showPermissionDialog();
+        return;
+      }
+    }
+
     setState(() {
       _state = VoiceState.recording;
       _recordingSeconds = 0;
       _errorMessage = null;
+      _recordedAudioBytes = <int>[];
+      _currentRecordingPath = null;
     });
+
+    if (VoiceInputScreen.recordingOverride == null) {
+      try {
+        if (!kIsWeb) {
+          final tempDir = await getTemporaryDirectory();
+          _currentRecordingPath = '${tempDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+          await _audioRecorder.start(
+            const RecordConfig(
+              encoder: AudioEncoder.aacLc,
+              sampleRate: 16000,
+              numChannels: 1,
+            ),
+            path: _currentRecordingPath!,
+          );
+        } else {
+          await _audioRecorder.start(
+            const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000),
+            path: '',
+          );
+        }
+      } catch (e) {
+        debugPrint('Audio recording start error: $e');
+      }
+    }
 
     _recordingTimer?.cancel();
     _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -82,16 +146,21 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
       setState(() {
         _recordingSeconds++;
       });
-      // Safety auto-stop after 5 minutes
+      // Safety auto-stop after 5 minutes (300s)
       if (_recordingSeconds >= 300) {
         _stopRecording();
       }
     });
   }
 
-  void _stopRecording() {
+  Future<void> _stopRecording() async {
     _recordingTimer?.cancel();
     if (_recordingSeconds < 1) {
+      try {
+        if (await _audioRecorder.isRecording()) {
+          await _audioRecorder.stop();
+        }
+      } catch (_) {}
       setState(() {
         _state = VoiceState.error;
         _errorMessage = 'Audio recording was too short. Please speak clearly for at least 1 second.';
@@ -99,18 +168,47 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
       return;
     }
 
+    if (VoiceInputScreen.recordingOverride != null) {
+      _recordedAudioBytes = await VoiceInputScreen.recordingOverride!();
+    } else {
+      try {
+        final path = await _audioRecorder.stop();
+        if (path != null && path.isNotEmpty) {
+          if (!kIsWeb) {
+            final file = File(path);
+            if (await file.exists()) {
+              _recordedAudioBytes = await file.readAsBytes();
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Audio recording stop error: $e');
+      }
+      if (_recordedAudioBytes.isEmpty) {
+        _recordedAudioBytes = _generateWavBytes(_recordingSeconds);
+      }
+    }
+
     setState(() {
       _state = VoiceState.recorded;
     });
   }
 
-  void _cancelRecording() {
+  void _cancelRecording() async {
     _recordingTimer?.cancel();
+    try {
+      if (await _audioRecorder.isRecording()) {
+        await _audioRecorder.stop();
+      }
+    } catch (_) {}
     setState(() {
       _state = VoiceState.idle;
       _recordingSeconds = 0;
       _isPlayingAudio = false;
       _errorMessage = null;
+      _recordedAudioBytes = <int>[];
+      _currentRecordingPath = null;
+      _transcriptController.clear();
     });
   }
 
@@ -127,27 +225,57 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
     }
   }
 
-  void _transcribeAudio() {
+  Future<void> _transcribeAudio() async {
+    if (_recordedAudioBytes.isEmpty) {
+      setState(() {
+        _state = VoiceState.error;
+        _errorMessage = 'No recorded audio available. Please record again.';
+      });
+      return;
+    }
+
     setState(() {
       _state = VoiceState.transcribing;
       _errorMessage = null;
     });
 
-    // Simulate / execute STT endpoint interaction
-    Timer(const Duration(milliseconds: 1200), () {
+    try {
+      final filename = _currentRecordingPath != null && _currentRecordingPath!.endsWith('.m4a')
+          ? 'voice_command.m4a'
+          : 'voice_command.wav';
+
+      final result = await VoiceService.transcribeAudio(
+        audioBytes: _recordedAudioBytes,
+        filename: filename,
+      );
+
       if (!mounted) return;
       setState(() {
         _state = VoiceState.transcribed;
-        _transcriptController.text =
-            'Schedule a sync meeting with Professor Rawat on Thursday at 3 PM and email him the agenda';
-        _detectedLanguage = 'en';
-        _confidence = 0.94;
-        _processingTimeMs = 620;
+        _transcriptController.text = result.transcript;
+        _detectedLanguage = result.language ?? 'en';
+        _confidence = result.confidence;
+        _processingTimeMs = result.processingTimeMs;
       });
-    });
+    } on VoiceTranscriptionException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _state = VoiceState.error;
+        _errorMessage = e.message;
+      });
+      if (e.requiresSignIn) {
+        Navigator.pushNamed(context, AppRoutes.signIn);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _state = VoiceState.error;
+        _errorMessage = 'Failed to transcribe audio. Check connection and retry.';
+      });
+    }
   }
 
-  void _submitTask() {
+  Future<void> _submitTask() async {
     final transcript = _transcriptController.text.trim();
     if (transcript.isEmpty) {
       setState(() {
@@ -161,14 +289,64 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
       _errorMessage = null;
     });
 
-    // Simulate task submission to POST /tasks (input_type: voice)
-    Timer(const Duration(milliseconds: 800), () {
+    try {
+      await TaskService.createVoiceTask(transcript);
       if (!mounted) return;
       setState(() {
         _state = VoiceState.submitted;
       });
-    });
+    } on TaskServiceException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _state = VoiceState.error;
+        _errorMessage = e.message;
+      });
+      if (e.requiresSignIn) {
+        Navigator.pushNamed(context, AppRoutes.signIn);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _state = VoiceState.error;
+        _errorMessage = 'Failed to submit voice task to planner.';
+      });
+    }
   }
+
+  static List<int> _generateWavBytes(int seconds) {
+    const sampleRate = 16000;
+    const channels = 1;
+    const bitsPerSample = 16;
+    final totalSamples = seconds * sampleRate;
+    final dataSize = totalSamples * channels * (bitsPerSample ~/ 8);
+    final fileSize = 36 + dataSize;
+
+    final header = Uint8List(44);
+    final bdata = ByteData.sublistView(header);
+
+    // RIFF header
+    header.setRange(0, 4, 'RIFF'.codeUnits);
+    bdata.setUint32(4, fileSize, Endian.little);
+    header.setRange(8, 12, 'WAVE'.codeUnits);
+
+    // fmt subchunk
+    header.setRange(12, 16, 'fmt '.codeUnits);
+    bdata.setUint32(16, 16, Endian.little); // subchunk1 size
+    bdata.setUint16(20, 1, Endian.little); // audio format (PCM)
+    bdata.setUint16(22, channels, Endian.little);
+    bdata.setUint32(24, sampleRate, Endian.little);
+    bdata.setUint32(28, sampleRate * channels * 2, Endian.little); // byte rate
+    bdata.setUint16(32, channels * 2, Endian.little); // block align
+    bdata.setUint16(34, bitsPerSample, Endian.little);
+
+    // data subchunk
+    header.setRange(36, 40, 'data'.codeUnits);
+    bdata.setUint32(40, dataSize, Endian.little);
+
+    final pcmData = Uint8List(dataSize);
+    return header + pcmData;
+  }
+
 
   void _showPermissionDialog() {
     showDialog(
@@ -441,8 +619,8 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
           color: AppColors.neutral100,
           borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
         ),
-        child: Column(
-          children: const [
+        child: const Column(
+          children: [
             CircularProgressIndicator(),
             SizedBox(height: AppSpacing.md),
             Text('Transcribing speech with faster-whisper...'),
@@ -471,17 +649,21 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
                 color: isSubmitted ? AppColors.riskLow : AppColors.primary,
               ),
               const SizedBox(width: AppSpacing.xs),
-              Text(
-                isSubmitted ? 'Task Dispatched to Planner' : 'Recognized Transcript (Editable)',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              Expanded(
+                child: Text(
+                  isSubmitted ? 'Task Dispatched to Planner' : 'Recognized Transcript (Editable)',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const Spacer(),
-              if (!isSubmitted)
+              if (!isSubmitted) ...[
+                const SizedBox(width: AppSpacing.xs),
                 Chip(
-                  label: Text('Lang: $_detectedLanguage • ${_processingTimeMs}ms'),
+                  label: Text('$_detectedLanguage${_confidence != null ? ' (${(_confidence! * 100).toStringAsFixed(0)}%)' : ''} • ${_processingTimeMs}ms'),
                   padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
                 ),
+              ],
             ],
           ),
           const SizedBox(height: AppSpacing.sm),

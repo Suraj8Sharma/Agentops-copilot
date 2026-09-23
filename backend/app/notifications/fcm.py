@@ -8,10 +8,20 @@ from app.db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 
+import os
+
 # Module-Level Initialisation (once at import)
-if settings.FIREBASE_SERVICE_ACCOUNT_PATH:
-    cred = credentials.Certificate(settings.FIREBASE_SERVICE_ACCOUNT_PATH)
-    firebase_admin.initialize_app(cred)
+if settings.FIREBASE_SERVICE_ACCOUNT_PATH and os.path.exists(settings.FIREBASE_SERVICE_ACCOUNT_PATH):
+    try:
+        cred = credentials.Certificate(settings.FIREBASE_SERVICE_ACCOUNT_PATH)
+        firebase_admin.initialize_app(cred)
+    except Exception as e:
+        logger.warning("Failed to initialize Firebase Admin SDK: %s", e)
+elif settings.FIREBASE_SERVICE_ACCOUNT_PATH:
+    logger.warning(
+        "FIREBASE_SERVICE_ACCOUNT_PATH file not found: %s",
+        settings.FIREBASE_SERVICE_ACCOUNT_PATH,
+    )
 
 def send_push_notification(
     user_id: str,

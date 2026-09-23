@@ -186,8 +186,23 @@ class FasterWhisperProvider(STTProvider):
         audio_path: str,
         language: str | None = None,
     ) -> STTResult:
-        # Offload synchronous CTranslate2 C++ inference to worker thread
-        return await asyncio.to_thread(self._run_transcription_sync, audio_path, language)
+        try:
+            # Offload synchronous CTranslate2 C++ inference to worker thread
+            return await asyncio.to_thread(self._run_transcription_sync, audio_path, language)
+        except Exception as e:
+            logger.warning(
+                "FasterWhisperProvider failed (%s); attempting Cloud fallback transcription...",
+                e,
+                exc_info=True,
+            )
+            gemini_key = getattr(settings, "GEMINI_API_KEY", "")
+            if gemini_key:
+                try:
+                    fallback = CloudFallbackSTTProvider()
+                    return await fallback.transcribe(audio_path, language)
+                except Exception as fallback_err:
+                    logger.error("Cloud fallback transcription also failed: %s", fallback_err)
+            raise
 
 
 # ---------------------------------------------------------------------------
