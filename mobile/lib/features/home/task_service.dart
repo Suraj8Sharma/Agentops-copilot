@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'home_screen.dart' show AppTask;
+import '../../core/api_config.dart';
 
 class TaskServiceException implements Exception {
   const TaskServiceException(this.message, {this.requiresSignIn = false});
@@ -13,10 +14,7 @@ class TaskServiceException implements Exception {
 }
 
 class TaskService {
-  static const String baseUrl = String.fromEnvironment(
-    'API_URL',
-    defaultValue: 'http://10.0.2.2:8000',
-  );
+  static String get baseUrl => ApiConfig.baseUrl;
 
   /// The app's auth/session layer supplies the current Supabase access token.
   static Future<String?> Function()? accessTokenProvider;
