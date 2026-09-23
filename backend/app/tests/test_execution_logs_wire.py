@@ -162,11 +162,7 @@ def _sse_response(
 class TestCalendarExecutionLogs:
     """calendar.py — _log_event_calendar wired into call()."""
 
-    MCP_SUCCESS_BODY = {
-        "jsonrpc": "2.0",
-        "id": IDEMPOTENCY_KEY,
-        "result": {"events": []},
-    }
+    MCP_SUCCESS_BODY = {"items": [], "kind": "calendar#events"}
 
     def test_tool_called_writes_log(self):
         """tool_called row is inserted before the HTTP call."""
@@ -176,7 +172,7 @@ class TestCalendarExecutionLogs:
         with (
             patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
             patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
-            patch("httpx.post", return_value=http_resp),
+            patch("httpx.get", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
 
@@ -207,7 +203,7 @@ class TestCalendarExecutionLogs:
         with (
             patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
             patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
-            patch("httpx.post", return_value=http_resp),
+            patch("httpx.get", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
 
@@ -235,7 +231,7 @@ class TestCalendarExecutionLogs:
         with (
             patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
             patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
-            patch("httpx.post", return_value=http_resp),
+            patch("httpx.get", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
 
@@ -262,7 +258,7 @@ class TestCalendarExecutionLogs:
         with (
             patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
             patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
-            patch("httpx.post", return_value=http_resp),
+            patch("httpx.get", return_value=http_resp),
         ):
             from app.mcp_clients import calendar
 
@@ -278,19 +274,16 @@ class TestCalendarExecutionLogs:
         assert result["status"] == "success"
 
 
+
 # ===========================================================================
 # GMAIL — MCP path
 # ===========================================================================
 
 
 class TestGmailMcpExecutionLogs:
-    """gmail.py — _call_gmail_mcp path (_log_event_gmail)."""
+    """gmail.py — REST read path (_log_event_gmail)."""
 
-    MCP_SUCCESS_BODY = {
-        "jsonrpc": "2.0",
-        "id": IDEMPOTENCY_KEY,
-        "result": {"threads": []},
-    }
+    MCP_SUCCESS_BODY = {"threads": [], "resultSizeEstimate": 0}
 
     def test_tool_called_writes_log(self):
         mock_supabase = _supabase_with_token(GOOGLE_TOKEN)
@@ -299,7 +292,7 @@ class TestGmailMcpExecutionLogs:
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
             patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
-            patch("httpx.post", return_value=http_resp),
+            patch("httpx.get", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
 
@@ -325,7 +318,7 @@ class TestGmailMcpExecutionLogs:
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
             patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
-            patch("httpx.post", return_value=http_resp),
+            patch("httpx.get", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
 
@@ -350,7 +343,7 @@ class TestGmailMcpExecutionLogs:
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
             patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
-            patch("httpx.post", return_value=http_resp),
+            patch("httpx.get", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
 
@@ -375,7 +368,7 @@ class TestGmailMcpExecutionLogs:
         with (
             patch("app.mcp_clients.gmail.supabase", mock_supabase),
             patch("app.mcp_clients.google_token_refresh.supabase_admin", mock_supabase),
-            patch("httpx.post", return_value=http_resp),
+            patch("httpx.get", return_value=http_resp),
         ):
             from app.mcp_clients import gmail
 
