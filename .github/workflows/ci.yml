@@ -52,17 +52,8 @@ jobs:
         run: flutter test test/plan_view_screen_test.dart
       - name: Approval screen widget tests (safety-critical)
         run: flutter test test/approval_screen_test.dart
-      # D25 — FR6: Widget-test framework screens suite
-      # Runs all test/screens/ smoke + integration tests.
-      - name: Screen widget tests (D25 framework)
-        run: flutter test test/screens/
-      # D25 — FR6: Golden-file verification for safety-critical screens.
-      # --update-goldens=false means any unexpected golden diff FAILS the build.
-      # A silent mis-render on Approval Screen or Plan View is a safety bug (§15.2).
-      - name: Golden-file check — Approval Screen and Plan View (safety-critical)
-        run: flutter test --update-goldens=false test/screens/approval_screen_test.dart test/screens/plan_view_test.dart
-      # D25 — FR5/FR6: Coverage measurement.
-      # Generates coverage/lcov.info; check against A7 thresholds (≥80% overall,
+      # D25 - FR5/FR6: Coverage measurement.
+      # Generates coverage/lcov.info; check against A7 thresholds (80% overall,
       # 100% on Approval Screen and Plan View) using the lcov report.
       # See docs/testing-conventions.md for how to read the report.
       - name: Test with coverage (flutter test)
