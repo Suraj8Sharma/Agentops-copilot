@@ -255,8 +255,8 @@ async def plan(state: AgentState) -> dict[str, Any]:
         f"Here is the JSON template for the steps required for this intent:\n"
         f"{json.dumps(template_json, indent=2)}\n\n"
         f"Your task is to fill in the [placeholder] and TBD values with actual parameters extracted from the user's request. "  # noqa: E501
-        f"For calendar dates/times, YOU MUST use strict ISO-8601 format (e.g. '2026-09-24T15:00:00Z'). "
-        f"If the user does not specify an end time for an event, automatically calculate it as 1 hour after the start time. "
+        f"For calendar dates/times, YOU MUST use strict ISO-8601 format (e.g. '2026-09-24T15:00:00Z'). "  # noqa: E501
+        f"If the user does not specify an end time for an event, automatically calculate it as 1 hour after the start time. "  # noqa: E501
         f"Output ONLY a raw JSON array matching this structure. Do NOT include markdown blocks like ```json ... ```, just the array itself."  # noqa: E501
     )
 
