@@ -91,3 +91,4 @@ class AuthButtonSpinner extends StatelessWidget {
         ),
       );
 }
+
