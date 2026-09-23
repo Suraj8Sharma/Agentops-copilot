@@ -52,5 +52,11 @@ jobs:
         run: flutter test test/plan_view_screen_test.dart
       - name: Approval screen widget tests (safety-critical)
         run: flutter test test/approval_screen_test.dart
+      # D25 - FR5/FR6: Coverage measurement.
+      # Generates coverage/lcov.info; check against A7 thresholds (80% overall,
+      # 100% on Approval Screen and Plan View) using the lcov report.
+      # See docs/testing-conventions.md for how to read the report.
+      - name: Test with coverage (flutter test)
+        run: flutter test --coverage
       - name: Test (flutter test)
         run: flutter test

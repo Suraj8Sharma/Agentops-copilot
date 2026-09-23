@@ -340,7 +340,13 @@ class _TaskTile extends StatelessWidget {
     return Card(
       key: Key(task.id),
       child: InkWell(
-        onTap: () => Navigator.of(context).pushNamed(AppRoutes.planView, arguments: task.id),
+        onTap: () {
+          if (status == TaskStatus.awaitingApproval) {
+            Navigator.of(context).pushNamed(AppRoutes.approval);
+          } else {
+            Navigator.of(context).pushNamed(AppRoutes.planView, arguments: task.id);
+          }
+        },
         borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.md),

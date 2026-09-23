@@ -58,6 +58,12 @@ class AuthRequest(BaseModel):
         return v.lower().strip()
 
 
+class GoogleAuthRequest(BaseModel):
+    """Request body for Google Sign-In."""
+
+    id_token: str
+
+
 class SignupResponse(BaseModel):
     """Response schema for a successful signup."""
 
@@ -287,4 +293,45 @@ def refresh_token(payload: RefreshRequest) -> Any:
     return RefreshResponse(
         access_token=session.access_token,
         refresh_token=session.refresh_token,
+    )
+
+@router.post(
+    "/google",
+    status_code=status.HTTP_200_OK,
+    response_model=LoginResponse,
+    summary="Google Sign-In",
+    description=(
+        "Authenticates a user via a Google ID token obtained from native Google Sign-In. "
+        "Returns a JWT access token and a refresh token. "
+        "Returns **401** for invalid tokens."
+    ),
+)
+def google_auth(payload: GoogleAuthRequest) -> Any:
+    """Authenticate and return a JWT token pair using a Google ID token."""
+    logger.info("Google Sign-In attempt")
+
+    try:
+        res = supabase.auth.sign_in_with_id_token({
+            "provider": "google",
+            "id_token": payload.id_token
+        })
+    except Exception as exc:
+        msg = _extract_supabase_error(exc)
+        logger.warning("Google Sign-In failed: %s", msg)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=msg,
+        ) from exc
+
+    if not res.session:
+        logger.warning("Google Sign-In returned no session")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed.",
+        )
+
+    logger.info("Google Sign-In successful for user: %s", res.user.id)
+    return LoginResponse(
+        access_token=res.session.access_token,
+        refresh_token=res.session.refresh_token,
     )

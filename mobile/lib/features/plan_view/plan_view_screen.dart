@@ -465,6 +465,77 @@ class PlanStepCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (step.inputParams.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      const Divider(height: 1),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text('Input',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(color: AppColors.neutral500)),
+                      const SizedBox(height: AppSpacing.xs),
+                      ...step.inputParams.entries.map(
+                        (e) => Padding(
+                          padding:
+                              const EdgeInsets.only(bottom: AppSpacing.xs),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${e.key}: ',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                          fontWeight: FontWeight.w600)),
+                              Expanded(
+                                child: Text(
+                                  '${e.value}',
+                                  style:
+                                      Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (status == PlanStepStatus.done &&
+                        step.output != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      const Divider(height: 1),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text('Result',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(color: AppColors.success)),
+                      const SizedBox(height: AppSpacing.xs),
+                      ...step.output!.entries.map(
+                        (e) => Padding(
+                          padding:
+                              const EdgeInsets.only(bottom: AppSpacing.xs),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${e.key}: ',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                          fontWeight: FontWeight.w600)),
+                              Expanded(
+                                child: Text(
+                                  '${e.value}',
+                                  style:
+                                      Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                     if (status == PlanStepStatus.awaitingApproval) ...[
                       const SizedBox(height: AppSpacing.sm),
                       Text(

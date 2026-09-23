@@ -139,7 +139,9 @@ class AuthService {
       Uri.parse('$_baseUrl/auth/signup'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email, 'password': password}),
-    );
+    ).timeout(const Duration(seconds: 10), onTimeout: () {
+      throw const AuthException('Connection timed out. Please try again.');
+    });
 
     if (response.statusCode == 201) {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -163,7 +165,32 @@ class AuthService {
       Uri.parse('$_baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email, 'password': password}),
-    );
+    ).timeout(const Duration(seconds: 10), onTimeout: () {
+      throw const AuthException('Connection timed out. Please try again.');
+    });
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      await _saveTokens(
+        accessToken: body['access_token'] as String? ?? '',
+        refreshToken: body['refresh_token'] as String? ?? '',
+      );
+      return;
+    }
+
+    throw AuthException(_extractDetail(response));
+  }
+
+  /// Sign in using a native Google ID Token.
+  /// Stores the returned token pair.
+  static Future<void> signInWithGoogle(String idToken) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/auth/google'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'id_token': idToken}),
+    ).timeout(const Duration(seconds: 10), onTimeout: () {
+      throw const AuthException('Connection timed out. Please try again.');
+    });
 
     if (response.statusCode == 200) {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -188,7 +215,9 @@ class AuthService {
       Uri.parse('$_baseUrl/auth/refresh'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'refresh_token': refreshToken}),
-    );
+    ).timeout(const Duration(seconds: 10), onTimeout: () {
+      throw const AuthException('Connection timed out. Please try again.');
+    });
 
     if (response.statusCode == 200) {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
