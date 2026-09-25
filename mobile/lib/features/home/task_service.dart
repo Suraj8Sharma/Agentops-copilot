@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../core/api_config.dart';
 import 'home_screen.dart' show AppTask;
 import '../../core/api_config.dart';
 
@@ -84,13 +85,33 @@ class TaskService {
   }
 
   static Future<AppTask> createTextTask(String rawInput) async {
-    if (rawInput.trim().isEmpty) {
-      throw const TaskServiceException('Task input cannot be empty.');
+    return _createTaskInternal(
+      input: rawInput,
+      inputType: 'text',
+      emptyErrorMessage: 'Task input cannot be empty.',
+    );
+  }
+
+  static Future<AppTask> createVoiceTask(String transcript) async {
+    return _createTaskInternal(
+      input: transcript,
+      inputType: 'voice',
+      emptyErrorMessage: 'Voice transcript cannot be empty.',
+    );
+  }
+
+  static Future<AppTask> _createTaskInternal({
+    required String input,
+    required String inputType,
+    required String emptyErrorMessage,
+  }) async {
+    if (input.trim().isEmpty) {
+      throw TaskServiceException(emptyErrorMessage);
     }
-    if (createTaskOverride != null) return createTaskOverride!(rawInput);
+    if (createTaskOverride != null) return createTaskOverride!(input);
 
     var token = await _getToken();
-    var response = await _postTask(rawInput, token);
+    var response = await _postTask(input, token, inputType: inputType);
 
     if (response.statusCode == 401 && refreshAccessTokenProvider != null) {
       token = await refreshAccessTokenProvider!();
@@ -100,7 +121,7 @@ class TaskService {
           requiresSignIn: true,
         );
       }
-      response = await _postTask(rawInput, token);
+      response = await _postTask(input, token, inputType: inputType);
     }
     if (response.statusCode == 401) {
       throw const TaskServiceException(
@@ -121,17 +142,27 @@ class TaskService {
     }
   }
 
-  static Future<http.Response> _postTask(String rawInput, String? token) {
+  static Future<http.Response> _postTask(
+    String input,
+    String? token, {
+    String inputType = 'text',
+  }) {
+    final Map<String, dynamic> body = <String, dynamic>{
+      'input_type': inputType,
+    };
+    if (inputType == 'voice') {
+      body['transcription_text'] = input;
+    } else {
+      body['raw_input'] = input;
+    }
+
     return (httpClientOverride ?? http.Client()).post(
       Uri.parse('$baseUrl/tasks'),
       headers: <String, String>{
         if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
       },
-      body: jsonEncode(<String, String>{
-        'input_type': 'text',
-        'raw_input': rawInput,
-      }),
+      body: jsonEncode(body),
     );
   }
 
@@ -144,3 +175,4 @@ class TaskService {
     return '$fallback (HTTP ${response.statusCode})';
   }
 }
+

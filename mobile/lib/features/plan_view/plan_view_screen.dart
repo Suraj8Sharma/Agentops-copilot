@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme.dart';
 import '../../core/router.dart';
+import '../../core/theme.dart';
+import '../../core/tts_service.dart';
 import 'plan_service.dart';
 
 /// Mock plan data mirrors the eventual task_plans + plan_steps response.
@@ -187,7 +188,38 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
     _fetchPlan();
   }
 
+  @override
+  void dispose() {
+    TtsService.stop();
+    super.dispose();
+  }
+
+  Future<void> _toggleReadAloud() async {
+    if (TtsService.isSpeaking) {
+      await TtsService.stop();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    if (_plan == null) return;
+    final plan = _plan!;
+    final StringBuffer speech = StringBuffer();
+    speech.write('Plan has ${plan.steps.length} steps. Status is ${plan.status}. ');
+
+    for (int i = 0; i < plan.steps.length; i++) {
+      final s = plan.steps[i];
+      speech.write('Step ${i + 1}: ${s.toolName}. Risk level is ${s.riskTier.name}. ');
+      if (s.requiresApproval) {
+        speech.write('This step requires your approval before running. ');
+      }
+    }
+
+    await TtsService.speak(speech.toString());
+    if (mounted) setState(() {});
+  }
+
   Future<void> _fetchPlan() async {
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -220,13 +252,28 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isSpeaking = TtsService.isSpeaking;
     return Scaffold(
-      appBar: AppBar(title: const Text('Agent Plan View')),
+      appBar: AppBar(
+        title: const Text('Agent Plan View'),
+        actions: [
+          IconButton(
+            key: const Key('plan-tts-button'),
+            tooltip: isSpeaking ? 'Stop speech' : 'Read plan aloud',
+            icon: Icon(
+              isSpeaking ? Icons.volume_off : Icons.volume_up_outlined,
+              color: isSpeaking ? AppColors.error : null,
+            ),
+            onPressed: _plan != null ? _toggleReadAloud : null,
+          ),
+        ],
+      ),
       body: SafeArea(
         child: _buildBody(context),
       ),
     );
   }
+
 
   Widget _buildBody(BuildContext context) {
     if (_isLoading) {
