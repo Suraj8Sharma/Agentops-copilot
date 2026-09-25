@@ -29,7 +29,12 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
-from app.voice.audio_utils import get_audio_extension, temporary_audio_file, validate_audio_metadata
+from app.voice.audio_utils import (
+    get_audio_extension,
+    normalize_language_code,
+    temporary_audio_file,
+    validate_audio_metadata,
+)
 from app.voice.stt_provider import (
     MockSTTProvider,
     STTResult,
@@ -77,13 +82,6 @@ def _generate_synthetic_wav_bytes(duration_seconds: float = 1.0, sample_rate: in
 # Unit Tests: Audio Utils & Validation
 # ---------------------------------------------------------------------------
 
-
-from app.voice.audio_utils import (
-    get_audio_extension,
-    normalize_language_code,
-    temporary_audio_file,
-    validate_audio_metadata,
-)
 
 def test_normalize_language_code():
     assert normalize_language_code("en-US") == "en"

@@ -1,4 +1,5 @@
 import logging
+import os
 
 import firebase_admin
 from firebase_admin import credentials, messaging
@@ -8,10 +9,11 @@ from app.db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 
-import os
-
 # Module-Level Initialisation (once at import)
-if settings.FIREBASE_SERVICE_ACCOUNT_PATH and os.path.exists(settings.FIREBASE_SERVICE_ACCOUNT_PATH):
+if (
+    settings.FIREBASE_SERVICE_ACCOUNT_PATH
+    and os.path.exists(settings.FIREBASE_SERVICE_ACCOUNT_PATH)
+):
     try:
         cred = credentials.Certificate(settings.FIREBASE_SERVICE_ACCOUNT_PATH)
         firebase_admin.initialize_app(cred)

@@ -25,7 +25,9 @@ _graph = None
 async def checkpointer_lifespan() -> AsyncIterator[None]:
     global _pool, _checkpointer, _graph
     if not settings.LANGGRAPH_CHECKPOINTER_DB_URI:
-        logger.info("LANGGRAPH_CHECKPOINTER_DB_URI not configured; using MemorySaver for LangGraph.")
+        logger.info(
+            "LANGGRAPH_CHECKPOINTER_DB_URI not configured; using MemorySaver for LangGraph."
+        )
         from langgraph.checkpoint.memory import MemorySaver
 
         _checkpointer = MemorySaver()

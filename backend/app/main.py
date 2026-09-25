@@ -25,6 +25,7 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import (
     activity,
@@ -70,7 +71,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("AgentOps Copilot API shutting down.")
 
 
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="AgentOps Copilot API",
