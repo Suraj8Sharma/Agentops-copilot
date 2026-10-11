@@ -1,0 +1,11 @@
+# Smoke subset for D26 eval (6-8 case IDs, mixing both categories)
+# Edit this list to adjust the smoke set.
+# Lines starting with # are comments.
+PL-01
+PL-04
+PL-07
+PL-15
+PL-20
+RT-01
+RT-14
+RT-17
