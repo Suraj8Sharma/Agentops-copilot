@@ -30,6 +30,8 @@ jobs:
           SUPABASE_URL: https://ci-placeholder.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
         run: pytest app/tests -v
+      - name: Verify Eval Thresholds
+        run: python -m app.eval.runner --check-results
 
   mobile:
     name: Mobile lint + test

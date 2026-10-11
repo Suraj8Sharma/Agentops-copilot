@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-11T04:18:02.579555+00:00",
+  "commit": "9c207c0",
+  "prompt_version": {
+    "planner": "planner-v3",
+    "router": "router-v1"
+  },
+  "planner": {
+    "valid_plan_rate": 1.0,
+    "case_pass_rate": 0.95,
+    "passed_ids": [
+      "PL-01",
+      "PL-02",
+      "PL-03",
+      "PL-04",
+      "PL-05",
+      "PL-06",
+      "PL-07",
+      "PL-08",
+      "PL-09",
+      "PL-10",
+      "PL-11",
+      "PL-12",
+      "PL-13",
+      "PL-14",
+      "PL-15",
+      "PL-17",
+      "PL-18",
+      "PL-19",
+      "PL-20"
+    ]
+  },
+  "router": {
+    "accuracy": 0.95,
+    "passed_ids": [
+      "RT-03",
+      "RT-01",
+      "RT-02",
+      "RT-04",
+      "RT-05",
+      "RT-06",
+      "RT-07",
+      "RT-08",
+      "RT-09",
+      "RT-10",
+      "RT-11",
+      "RT-12",
+      "RT-13",
+      "RT-14",
+      "RT-15",
+      "RT-16",
+      "RT-17",
+      "RT-19",
+      "RT-20"
+    ]
+  }
+}
