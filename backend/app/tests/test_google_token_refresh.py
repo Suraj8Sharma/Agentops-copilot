@@ -16,7 +16,7 @@ No live Supabase connection, no real Google API call, no env vars required.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from cryptography.fernet import Fernet
@@ -63,27 +63,11 @@ def _make_db_row(
     return row
 
 
-def _mock_db(rows: list[dict]) -> MagicMock:
-    """Return a mock supabase_admin whose table().select()...execute() returns rows."""
-    mock_admin = MagicMock()
+def _set_select_data(mock_admin: MagicMock, rows: list[dict]) -> None:
+    """Helper to wire table().select()...execute().data to rows without long lines."""
     (
-        mock_admin.table.return_value
-        .select.return_value
-        .eq.return_value
-        .eq.return_value
-        .limit.return_value
-        .execute.return_value
-        .data
+        mock_admin.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data
     ) = rows
-    return mock_admin
-
-
-def _mock_settings() -> MagicMock:
-    m = MagicMock()
-    m.ENCRYPTION_KEY = _FERNET_KEY.decode()
-    m.GOOGLE_OAUTH_CLIENT_ID = "fake-client-id"
-    m.GOOGLE_OAUTH_CLIENT_SECRET = "fake-client-secret"
-    return m
 
 
 def _successful_refresh_response(new_token: str = "new-access-token") -> MagicMock:
@@ -109,10 +93,10 @@ def test_valid_token_returned_without_refresh(
     mock_post: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """When expires_at is 30 min in the future, return the existing token without calling httpx.post."""
+    """When expires_at is in the future, return existing token without calling httpx.post."""
     mock_settings.ENCRYPTION_KEY = _FERNET_KEY.decode()
     row = _make_db_row(expires_at=_future_expires_at(30))
-    mock_admin.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [row]
+    _set_select_data(mock_admin, [row])
 
     from app.mcp_clients.google_token_refresh import get_valid_google_token
 
@@ -136,12 +120,13 @@ def test_expired_token_triggers_google_refresh(
     mock_settings.GOOGLE_OAUTH_CLIENT_SECRET = "fake-client-secret"
 
     row = _make_db_row(expires_at=_past_expires_at(10))
-    mock_admin.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [row]
+    _set_select_data(mock_admin, [row])
 
     mock_post.return_value = _successful_refresh_response("refreshed-access-token")
 
     # Mock the update chain
-    mock_admin.table.return_value.update.return_value.eq.return_value.in_.return_value.execute.return_value = MagicMock()
+    update_mock = mock_admin.table.return_value.update.return_value
+    update_mock.eq.return_value.in_.return_value.execute.return_value = MagicMock()
 
     from app.mcp_clients.google_token_refresh import get_valid_google_token
 
@@ -158,7 +143,9 @@ def test_expired_token_triggers_google_refresh(
     # Verify the DB update was called with an encrypted new token (not the plaintext)
     update_call = mock_admin.table.return_value.update.call_args
     update_payload = update_call[0][0]
-    assert update_payload["access_token"] != "refreshed-access-token", "Token must be encrypted before storing"
+    assert update_payload["access_token"] != "refreshed-access-token", (
+        "Token must be encrypted before storing"
+    )
     # Decrypt and verify
     decrypted = Fernet(_FERNET_KEY).decrypt(update_payload["access_token"].encode()).decode()
     assert decrypted == "refreshed-access-token"
@@ -172,15 +159,16 @@ def test_refresh_updates_both_provider_rows(
     mock_post: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """After a successful refresh, both google_calendar and gmail rows are updated (shared token)."""
+    """After successful refresh, both google_calendar and gmail rows are updated."""
     mock_settings.ENCRYPTION_KEY = _FERNET_KEY.decode()
     mock_settings.GOOGLE_OAUTH_CLIENT_ID = "fake-client-id"
     mock_settings.GOOGLE_OAUTH_CLIENT_SECRET = "fake-client-secret"
 
     row = _make_db_row(expires_at=_past_expires_at(10))
-    mock_admin.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [row]
+    _set_select_data(mock_admin, [row])
     mock_post.return_value = _successful_refresh_response()
-    mock_admin.table.return_value.update.return_value.eq.return_value.in_.return_value.execute.return_value = MagicMock()
+    update_mock = mock_admin.table.return_value.update.return_value
+    update_mock.eq.return_value.in_.return_value.execute.return_value = MagicMock()
 
     from app.mcp_clients.google_token_refresh import get_valid_google_token
 
@@ -209,7 +197,7 @@ def test_revoked_token_returns_none_and_marks_expired(
     mock_settings.GOOGLE_OAUTH_CLIENT_SECRET = "fake-client-secret"
 
     row = _make_db_row(expires_at=_past_expires_at(10))
-    mock_admin.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [row]
+    _set_select_data(mock_admin, [row])
 
     # Google returns non-2xx
     mock_revoked = MagicMock()
@@ -218,7 +206,8 @@ def test_revoked_token_returns_none_and_marks_expired(
     mock_revoked.json.return_value = {"error": "invalid_grant"}
     mock_post.return_value = mock_revoked
 
-    mock_admin.table.return_value.update.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock()
+    update_mock = mock_admin.table.return_value.update.return_value
+    update_mock.eq.return_value.eq.return_value.execute.return_value = MagicMock()
 
     from app.mcp_clients.google_token_refresh import get_valid_google_token
 
@@ -240,12 +229,12 @@ def test_missing_refresh_token_returns_none(
     mock_post: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """When refresh_token is None and the access token is expired, return None without calling httpx.post."""
+    """When refresh_token is None and access token expired, return None without calling httpx."""
     mock_settings.ENCRYPTION_KEY = _FERNET_KEY.decode()
 
     row = _make_db_row(refresh_token=None, expires_at=_past_expires_at(10), encrypt=False)
     row["access_token"] = _encrypt("plain-access-token")
-    mock_admin.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [row]
+    _set_select_data(mock_admin, [row])
 
     from app.mcp_clients.google_token_refresh import get_valid_google_token
 
@@ -263,14 +252,9 @@ def test_no_db_row_returns_none(
     mock_post: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """When the DB query returns no rows (e.g. after disconnect), return None.
-
-    This also proves: after DELETE /oauth/{provider}, get_valid_google_token
-    returns None, so the MCP client cannot proceed.
-    """
+    """When the DB query returns no rows (e.g. after disconnect), return None."""
     mock_settings.ENCRYPTION_KEY = _FERNET_KEY.decode()
-
-    mock_admin.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
+    _set_select_data(mock_admin, [])
 
     from app.mcp_clients.google_token_refresh import get_valid_google_token
 
@@ -288,7 +272,7 @@ def test_network_error_returns_none(
     mock_post: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """When httpx raises RequestError during the refresh call, return None without re-raising."""
+    """When httpx raises RequestError during refresh call, return None without re-raising."""
     import httpx
 
     mock_settings.ENCRYPTION_KEY = _FERNET_KEY.decode()
@@ -296,7 +280,7 @@ def test_network_error_returns_none(
     mock_settings.GOOGLE_OAUTH_CLIENT_SECRET = "fake-client-secret"
 
     row = _make_db_row(expires_at=_past_expires_at(10))
-    mock_admin.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [row]
+    _set_select_data(mock_admin, [row])
 
     mock_post.side_effect = httpx.RequestError("Connection refused")
 
@@ -323,16 +307,11 @@ def test_scope_mismatch_row_returns_none(
     mock_post: MagicMock,
     mock_settings: MagicMock,
 ) -> None:
-    """A row with status='scope_mismatch' must return None (Manual §15.4).
-
-    Currently xfail: production code does not check the status column.
-    This test will start passing once the enforcement is added (D28).
-    Remove the xfail marker at that point.
-    """
+    """A row with status='scope_mismatch' must return None (Manual §15.4)."""
     mock_settings.ENCRYPTION_KEY = _FERNET_KEY.decode()
 
     row = _make_db_row(expires_at=_future_expires_at(30), status="scope_mismatch")
-    mock_admin.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [row]
+    _set_select_data(mock_admin, [row])
 
     from app.mcp_clients.google_token_refresh import get_valid_google_token
 
@@ -372,9 +351,10 @@ def test_refresh_success_rate_meets_a3_threshold(
     # 19 successes then 1 failure
     mock_post.side_effect = [success_resp] * 19 + [revoked_resp]
 
-    mock_admin.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [expired_row]
-    mock_admin.table.return_value.update.return_value.eq.return_value.in_.return_value.execute.return_value = MagicMock()
-    mock_admin.table.return_value.update.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock()
+    _set_select_data(mock_admin, [expired_row])
+    update_mock = mock_admin.table.return_value.update.return_value
+    update_mock.eq.return_value.in_.return_value.execute.return_value = MagicMock()
+    update_mock.eq.return_value.eq.return_value.execute.return_value = MagicMock()
 
     from app.mcp_clients.google_token_refresh import get_valid_google_token
 
@@ -384,8 +364,6 @@ def test_refresh_success_rate_meets_a3_threshold(
     failures = [r for r in results if r is None]
 
     success_rate = len(successes) / 20
-    assert success_rate >= 0.95, (
-        f"A3: refresh success rate must be >= 95%, got {success_rate:.0%}"
-    )
+    assert success_rate >= 0.95, f"A3: refresh success rate must be >= 95%, got {success_rate:.0%}"
     assert len(failures) == 1, "Exactly 1 failure expected"
     assert failures[0] is None, "Failure must return None, not raise"

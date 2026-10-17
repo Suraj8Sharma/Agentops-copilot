@@ -87,7 +87,8 @@ def test_disconnect_google_deletes_row(mock_service_client: MagicMock) -> None:
 
     Verifies:
     - Response is 200 {"message": "Disconnected"}
-    - table("oauth_connections").delete().eq("user_id", <user_id>).eq("provider", "google_calendar").execute() is called
+    - table("oauth_connections").delete().eq("user_id", <user_id>)
+      .eq("provider", "google_calendar").execute() is called
     """
     client = _authed_client()
 
@@ -115,9 +116,7 @@ def test_disconnect_requires_jwt() -> None:
 
     response = client.delete("/oauth/github")
 
-    assert response.status_code == 401, (
-        f"Expected 401 without JWT, got {response.status_code}"
-    )
+    assert response.status_code == 401, f"Expected 401 without JWT, got {response.status_code}"
 
 
 @pytest.mark.xfail(

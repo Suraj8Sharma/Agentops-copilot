@@ -25,9 +25,7 @@ from pathlib import Path
 # Helpers
 # ---------------------------------------------------------------------------
 
-_MIGRATIONS_DIR = (
-    Path(__file__).parent.parent.parent / "migrations"
-)
+_MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
 
 
 def _load_sql(filename: str) -> str:
@@ -80,9 +78,7 @@ def test_oauth_connections_select_policy_is_owner_only() -> None:
     sql = _load_sql(_OAUTH_MIGRATION)
 
     # Must have a SELECT policy
-    assert _contains(sql, "for select"), (
-        f"No SELECT policy found in {_OAUTH_MIGRATION}"
-    )
+    assert _contains(sql, "for select"), f"No SELECT policy found in {_OAUTH_MIGRATION}"
 
     # The policy expression must be owner-only
     assert _contains(sql, "user_id = auth.uid()"), (
