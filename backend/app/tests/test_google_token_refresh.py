@@ -315,7 +315,7 @@ def test_network_error_returns_none(
     reason=(
         "get_valid_google_token does not check status field; "
         "scope_mismatch rows proceed as active. Fix in D28. "
-        "GitHub issue: TODO"
+        "Documented in docs/issues/d28-oauth-bugs.md (Issue 1)"
     ),
 )
 def test_scope_mismatch_row_returns_none(
