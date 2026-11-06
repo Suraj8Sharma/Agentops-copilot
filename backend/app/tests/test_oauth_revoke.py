@@ -119,15 +119,6 @@ def test_disconnect_requires_jwt() -> None:
     assert response.status_code == 401, f"Expected 401 without JWT, got {response.status_code}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DELETE /oauth/{provider} does not validate provider against _SUPPORTED_PROVIDERS. "
-        "An unknown provider like 'notion' silently runs an empty delete instead of returning 404. "
-        "Fix in D28: add _SUPPORTED_PROVIDERS guard to the DELETE endpoint. "
-        "Documented in docs/issues/d28-oauth-bugs.md (Issue 2)"
-    ),
-)
 def test_disconnect_unknown_provider_returns_404(mock_service_client: MagicMock) -> None:
     """DELETE /oauth/notion (unknown provider) must return 404.
 
