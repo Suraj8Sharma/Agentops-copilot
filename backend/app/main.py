@@ -32,6 +32,7 @@ from app.api.routers import (
     activity,
     approvals,
     auth,
+    dashboard,
     digests,
     health,
     me,
@@ -98,4 +99,4 @@ app.include_router(oauth.router)
 app.include_router(approvals.router)
 app.include_router(digests.router)
 app.include_router(notifications.router)
-
+app.include_router(dashboard.router)
