@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
 
+    # Free-tier defaults: keep the app conservative when running under Groq/Gemini
+    # developer tiers, where 429s and token quotas are common and can be hit by
+    # short bursts even with a single user.
+    LLM_FREE_TIER_MODE: bool = True
+    LLM_FREE_TIER_BASE_DELAY_SECONDS: float = 5.0
+    LLM_FREE_TIER_MAX_RETRIES: int = 3
+    LLM_FREE_TIER_CONCURRENT_CALLS: int = 1
+
     # -------------------------------------------------------------------------
     # OAuth — required from D7 / D10 (placeholders today)
     # -------------------------------------------------------------------------
