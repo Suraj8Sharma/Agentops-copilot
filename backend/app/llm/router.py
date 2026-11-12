@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 
+from app.core.config import settings
+
 from .gemini_client import call_gemini
 from .groq_client import call_groq
 from .types import (
@@ -13,6 +15,46 @@ from .types import (
 )
 
 _llm_logger = logging.getLogger("llm_usage")
+
+# Free-tier aware routing defaults. We intentionally keep a large gap between
+# retries because Groq/Gemini developer tiers can silently reject bursts with 429
+# even when the app is otherwise healthy.
+_FREE_TIER_BASE_DELAY = max(float(getattr(settings, "LLM_FREE_TIER_BASE_DELAY_SECONDS", 5.0)), 2.0)
+_FREE_TIER_MAX_RETRIES = max(int(getattr(settings, "LLM_FREE_TIER_MAX_RETRIES", 2)), 1)
+
+
+async def _backoff_delay_for_attempt(attempt: int, *, is_free_tier: bool = True) -> float:
+    """Return a conservative backoff delay in seconds for a failed provider round."""
+    if not is_free_tier:
+        return 0.0
+    # 5s, 10s, 20s ... capped to avoid hammering the free-tier quota.
+    return min(_FREE_TIER_BASE_DELAY * (2**attempt), 30.0)
+
+
+async def _call_with_provider_retry(
+    provider_name: str,
+    call_fn,
+    prompt: str,
+    model: str | None,
+    request_type: str,
+) -> LLMResponse:
+    """Call a provider once, and only retry that single provider after a free-tier delay."""
+    try:
+        return await call_fn(prompt, model=model)
+    except (LLMRateLimitError, LLMServerError) as exc:
+        log_llm_usage(
+            provider=provider_name,
+            model=model or "unknown",
+            request_type=request_type,
+            tokens_in=0,
+            tokens_out=0,
+            latency_ms=0,
+            rate_limit_hit=isinstance(exc, LLMRateLimitError),
+            success=False,
+        )
+        if isinstance(exc, LLMRateLimitError):
+            await asyncio.sleep(_FREE_TIER_BASE_DELAY)
+        raise
 
 
 def log_llm_usage(
@@ -78,13 +120,10 @@ async def route_llm_call(
         LLMRouterExhaustedError: When both Groq and Gemini fail after retries
         Other exceptions: Propagate immediately from Groq if not rate-limit/server-error
     """
-    max_retries = 3
-    base_delay = 1.0
     groq_error = None
     gemini_error = None
 
-    for attempt in range(max_retries + 1):
-        # Step 1: Try Groq
+    for attempt in range(_FREE_TIER_MAX_RETRIES + 1):
         try:
             response = await call_groq(prompt, model=groq_model)
             log_llm_usage(
@@ -99,7 +138,6 @@ async def route_llm_call(
             )
             return response
         except (LLMRateLimitError, LLMServerError) as e:
-            # Log the failure and prepare for fallback
             groq_error = e
             log_llm_usage(
                 provider=LLMProvider.GROQ.value,
@@ -112,7 +150,6 @@ async def route_llm_call(
                 success=False,
             )
 
-        # Step 2: Fallback to Gemini
         try:
             response = await call_gemini(prompt, model=gemini_model)
             log_llm_usage(
@@ -128,7 +165,6 @@ async def route_llm_call(
             return response
         except (LLMRateLimitError, LLMServerError) as e:
             gemini_error = e
-            # Both providers failed
             log_llm_usage(
                 provider=LLMProvider.GEMINI.value,
                 model=gemini_model or "unknown",
@@ -140,18 +176,19 @@ async def route_llm_call(
                 success=False,
             )
 
-        # If we reach here, both failed. Apply exponential backoff and retry, or raise if exhausted
-        if attempt < max_retries:
-            delay = base_delay * (2**attempt)
+        if attempt < _FREE_TIER_MAX_RETRIES:
+            delay = await _backoff_delay_for_attempt(attempt, is_free_tier=True)
             _llm_logger.warning(
-                f"Both Groq and Gemini failed (attempt {attempt + 1}/{max_retries + 1}). "
-                f"Retrying in {delay} seconds..."
+                "Both Groq and Gemini failed on attempt %s/%s; "
+                "free-tier backoff for %.1fs before retry.",
+                attempt + 1,
+                _FREE_TIER_MAX_RETRIES + 1,
+                delay,
             )
             await asyncio.sleep(delay)
         else:
-            # Raise exhausted error with both underlying errors
             error_msg = (
-                f"Both Groq and Gemini failed after {max_retries + 1} attempts. "
+                f"Both Groq and Gemini failed after {_FREE_TIER_MAX_RETRIES + 1} attempts. "
                 f"Groq: {str(groq_error)}. Gemini: {str(gemini_error)}"
             )
             raise LLMRouterExhaustedError(error_msg) from gemini_error
