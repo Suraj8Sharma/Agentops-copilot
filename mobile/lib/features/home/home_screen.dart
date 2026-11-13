@@ -296,7 +296,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       );
                     } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return const _EmptyTaskState();
+                      return _EmptyTaskState(
+                        onCreateTask: () => _openTaskComposer(context),
+                      );
                     }
 
                     final tasks = snapshot.data!;
@@ -359,8 +361,12 @@ class _TaskTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(displayInput,
-                        style: Theme.of(context).textTheme.bodyLarge),
+                    Text(
+                      displayInput,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
                     const SizedBox(height: AppSpacing.sm),
                     Align(
                       alignment: Alignment.centerLeft,
@@ -395,7 +401,9 @@ class _TaskTile extends StatelessWidget {
 }
 
 class _EmptyTaskState extends StatelessWidget {
-  const _EmptyTaskState();
+  const _EmptyTaskState({this.onCreateTask});
+
+  final VoidCallback? onCreateTask;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -412,6 +420,15 @@ class _EmptyTaskState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
+            if (onCreateTask != null) ...[
+              const SizedBox(height: AppSpacing.md),
+              ElevatedButton.icon(
+                key: const Key('empty-create-task-button'),
+                onPressed: onCreateTask,
+                icon: const Icon(Icons.add),
+                label: const Text('Create a task'),
+              ),
+            ],
           ],
         ),
       );

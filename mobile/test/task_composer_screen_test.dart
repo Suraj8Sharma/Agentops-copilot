@@ -23,9 +23,9 @@ void main() {
     TaskService.refreshAccessTokenProvider = null;
   });
 
-  Widget composer() => MaterialApp(
+  Widget composer({bool voiceModeEnabled = false}) => MaterialApp(
         theme: AppTheme.light,
-        home: const TaskComposerScreen(),
+        home: TaskComposerScreen(voiceModeEnabled: voiceModeEnabled),
       );
 
   testWidgets('renders text mode and reserves voice mode affordance',

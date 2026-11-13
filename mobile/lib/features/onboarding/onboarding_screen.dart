@@ -5,6 +5,17 @@ import 'package:flutter/material.dart';
 import '../../core/router.dart';
 import '../../core/theme.dart';
 
+/// Service managing onboarding completion state.
+class OnboardingService {
+  static Future<void> Function()? completeOnboardingOverride;
+
+  static Future<void> markCompleted() async {
+    if (completeOnboardingOverride != null) {
+      await completeOnboardingOverride!();
+    }
+  }
+}
+
 /// Static onboarding flow for D3. The completion flag is deliberately an
 /// input so a persisted profiles.onboarding_completed value can be connected
 /// later without changing the flow itself.
@@ -12,6 +23,9 @@ class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key, this.onboardingCompleted = false});
 
   final bool onboardingCompleted;
+
+  /// Optional override hook for simulating permission prompt request/response.
+  static Future<bool> Function()? requestPermissionsOverride;
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -38,7 +52,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void initState() {
     super.initState();
     if (widget.onboardingCompleted) {
-      _splashTimer = Timer(Duration.zero, _goToSignIn);
+      _splashTimer = Timer(Duration.zero, () {
+        if (!mounted || _hasNavigated) return;
+        _hasNavigated = true;
+        Navigator.of(context).pushReplacementNamed(AppRoutes.signIn);
+      });
     } else {
       _splashTimer = Timer(_splashDuration, () {
         if (mounted) setState(() => _showSplash = false);
@@ -53,18 +71,35 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
-  void _goToSignIn() {
+  Future<void> _goToSignIn() async {
     if (!mounted || _hasNavigated) return;
     _hasNavigated = true;
+    await OnboardingService.markCompleted();
+    if (!mounted) return;
     Navigator.of(context).pushReplacementNamed(AppRoutes.signIn);
   }
 
+  Future<void> _showPermissionPrimingModal() async {
+    final granted = await showModalBottomSheet<bool>(
+      context: context,
+      isDismissible: true,
+      builder: (context) => const PermissionPrimingSheet(),
+    );
+    if (!mounted) return;
+    if (granted == true && OnboardingScreen.requestPermissionsOverride != null) {
+      await OnboardingScreen.requestPermissionsOverride!();
+    }
+    await _goToSignIn();
+  }
+
   void _next() {
-    if (_pageIndex == _slides.length - 1) return _goToSignIn();
+    if (_pageIndex == _slides.length - 1) {
+      _showPermissionPrimingModal();
+      return;
+    }
     _pageController.nextPage(
         duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -174,6 +209,78 @@ class _SlideView extends StatelessWidget {
           ),
         ),
       );
+}
+
+class PermissionPrimingSheet extends StatelessWidget {
+  const PermissionPrimingSheet({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.screenPadding),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Permissions',
+            style: theme.textTheme.headlineSmall,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'AgentOps works best with microphone and notifications enabled:',
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              const Icon(Icons.mic, color: AppColors.primary),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Microphone: to capture hands-free voice tasks.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              const Icon(Icons.notifications_active_outlined,
+                  color: AppColors.primary),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Notifications: to alert you when a task needs approval.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              key: const Key('allow-permissions'),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Allow permissions'),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              key: const Key('deny-permissions'),
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Not now'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _PageIndicator extends StatelessWidget {
