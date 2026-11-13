@@ -42,7 +42,8 @@ If any box fails, fix that first.
 | 5 | `--validate-only` needs no database and no secrets. The real load uses the service-role key and stays with Suraj / CI. | The service-role key bypasses RLS on every table. Teammates only need it to check a file, which validate-only covers. |
 | 6 | Loader lives at `backend/app/eval/ingest_golden.py` (new folder). | §11 has no eval folder; D26's harness can sit next to it. Alternative: `backend/scripts/`. |
 
-If D26 later chooses to overwrite golden rows in place instead of decision 1, the loader's lookup must change. Lock decision 1 today.
+If D26 later chooses to overwrite golden rows in place instead of decision 1, the loader's lookup must change. Lock deci
+sion 1 today.
 
 ---
 

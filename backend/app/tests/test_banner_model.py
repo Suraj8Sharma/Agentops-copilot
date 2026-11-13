@@ -1,10 +1,6 @@
-import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-sys.modules["google"] = MagicMock()
-sys.modules["google.genai"] = MagicMock()
-
-import pytest  # noqa: E402
+import pytest
 
 from app.llm.types import (  # noqa: E402
     LLMProvider,

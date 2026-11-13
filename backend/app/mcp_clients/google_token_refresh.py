@@ -98,7 +98,7 @@ def get_valid_google_token(user_id: str, provider: str) -> Optional[str]:
     try:
         result = (
             supabase_admin.table("oauth_connections")
-            .select("access_token, refresh_token, expires_at")
+            .select("access_token, refresh_token, expires_at, status")
             .eq("user_id", user_id)
             .eq("provider", provider)
             .limit(1)
@@ -122,6 +122,16 @@ def get_valid_google_token(user_id: str, provider: str) -> Optional[str]:
         return None
 
     row = result.data[0]
+    connection_status = row.get("status", "active")
+    if connection_status != "active":
+        logger.warning(
+            "google_token_refresh: connection is %r, aborting token retrieval "
+            "[user_id=%s provider=%s]",
+            connection_status,
+            user_id,
+            provider,
+        )
+        return None
     encrypted_access = row.get("access_token") or ""
     encrypted_refresh = row.get("refresh_token") or ""
     expires_at_raw: str | None = row.get("expires_at")

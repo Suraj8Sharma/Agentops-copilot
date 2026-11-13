@@ -26,11 +26,13 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import (
     activity,
     approvals,
     auth,
+    dashboard,
     digests,
     health,
     me,
@@ -77,6 +79,14 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
@@ -89,4 +99,4 @@ app.include_router(oauth.router)
 app.include_router(approvals.router)
 app.include_router(digests.router)
 app.include_router(notifications.router)
-
+app.include_router(dashboard.router)

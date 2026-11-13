@@ -4,6 +4,7 @@ import '../../core/router.dart';
 import '../../core/theme.dart';
 import 'auth_service.dart';
 import 'auth_widgets.dart';
+import 'google_sign_in_button.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -166,6 +167,19 @@ class _SignInScreenState extends State<SignInScreen> {
                           ? const AuthButtonSpinner()
                           : const Text('Sign in'),
                     ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Row(
+                      children: [
+                        const Expanded(child: Divider()),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                          child: Text('OR', style: tt.labelMedium?.copyWith(color: AppColors.neutral500)),
+                        ),
+                        const Expanded(child: Divider()),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    const GoogleSignInButton(),
                   ],
                 ),
               ),

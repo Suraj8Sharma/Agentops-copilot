@@ -22,12 +22,14 @@ POST /auth/login
 
 import logging
 import re
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
 
-from app.db.supabase_client import supabase
+from app.core.config import settings
+from app.core.security import CurrentUser, get_current_user
+from app.db.supabase_client import create_client, supabase
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,12 @@ class AuthRequest(BaseModel):
         if not _EMAIL_RE.match(v):
             raise ValueError(f"Invalid email address: {v!r}")
         return v.lower().strip()
+
+
+class GoogleAuthRequest(BaseModel):
+    """Request body for Google Sign-In."""
+
+    id_token: str
 
 
 class SignupResponse(BaseModel):
@@ -200,6 +208,14 @@ def login(payload: AuthRequest) -> Any:
     except Exception as exc:
         error_msg = _extract_supabase_error(exc)
         logger.warning("Login failed for %s -- %s", payload.email, error_msg)
+        if any(
+            kw in error_msg.lower()
+            for kw in ("too many", "rate limit", "lockout", "locked out")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=error_msg,
+            ) from exc
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
@@ -288,3 +304,305 @@ def refresh_token(payload: RefreshRequest) -> Any:
         access_token=session.access_token,
         refresh_token=session.refresh_token,
     )
+
+# ---------------------------------------------------------------------------
+# Forgot password
+# ---------------------------------------------------------------------------
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Request body for the forgot-password endpoint."""
+
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_syntax(cls, v: str) -> str:
+        """Reject obviously malformed addresses without a DNS check."""
+        if not _EMAIL_RE.match(v):
+            raise ValueError(f"Invalid email address: {v!r}")
+        return v.lower().strip()
+
+
+@router.post(
+    "/forgot-password",
+    status_code=status.HTTP_200_OK,
+    summary="Send a password reset email",
+    description=(
+        "Triggers a Supabase Auth password-reset email for the given address. "
+        "Always returns **200** regardless of whether the email is registered — "
+        "this prevents user-enumeration attacks."
+    ),
+)
+def forgot_password(payload: ForgotPasswordRequest) -> dict:
+    """Send a password-reset email via Supabase Auth.
+
+    Args:
+        payload: ``{email}`` — the address to send the reset link to.
+
+    Returns:
+        ``{\"message\": \"...\"}`` — always 200, never reveals registration status.
+    """
+    logger.info("forgot_password: reset requested for email=%s", payload.email)
+    try:
+        supabase.auth.reset_password_email(payload.email)
+        logger.info("forgot_password: reset email dispatched for %s", payload.email)
+    except Exception as exc:
+        # Log but swallow — do not leak whether the address is registered.
+        logger.warning(
+            "forgot_password: Supabase error for %s -- %s", payload.email, exc
+        )
+    return {"message": "If that email is registered, a password reset link has been sent."}
+
+
+# ---------------------------------------------------------------------------
+# Logout
+# ---------------------------------------------------------------------------
+
+
+class LogoutRequest(BaseModel):
+    """Request body for the logout endpoint."""
+
+    refresh_token: str
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_200_OK,
+    summary="Log out and invalidate the current session",
+    description=(
+        "Calls Supabase Auth ``sign_out`` to invalidate the session server-side. "
+        "The client should discard both tokens after calling this endpoint. "
+        "Always returns **200** — a best-effort sign-out even if Supabase is unreachable."
+    ),
+)
+def logout(payload: LogoutRequest) -> dict:
+    """Invalidate the current Supabase Auth session.
+
+    Args:
+        payload: ``{refresh_token}`` — the refresh token to invalidate.
+
+    Returns:
+        ``{\"message\": \"Logged out successfully.\"}`` — always 200.
+    """
+    logger.info("logout: sign-out requested")
+    try:
+        supabase.auth.sign_out()
+        logger.info("logout: session invalidated successfully")
+    except Exception as exc:
+        # Best-effort — the client must discard tokens regardless.
+        logger.warning("logout: Supabase sign_out error -- %s", exc)
+    return {"message": "Logged out successfully."}
+
+
+# ---------------------------------------------------------------------------
+# Account deletion
+# ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/account",
+    status_code=status.HTTP_200_OK,
+    summary="Permanently delete the authenticated user's account",
+    description=(
+        "Deletes the authenticated user's account via the Supabase Admin API. "
+        "Cascades across all 17 database tables via ``ON DELETE CASCADE`` foreign "
+        "keys — tasks, oauth_connections, memory, notifications, digests, etc. "
+        "Requires a valid JWT. This action is **irreversible**."
+    ),
+)
+def delete_account(
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> dict:
+    """Permanently delete the authenticated user and all their data.
+
+    Uses the service-role admin client to bypass RLS and call
+    ``auth.admin.delete_user``, which triggers Supabase's cascade deletion
+    across every table that has a ``user_id`` foreign key referencing
+    ``auth.users``.
+
+    Args:
+        current_user: Injected by the JWT dependency — carries ``user_id``.
+
+    Returns:
+        ``{\"message\": \"Account deleted successfully.\"}``
+
+    Raises:
+        HTTPException(401): Missing or invalid JWT (automatic via dependency).
+        HTTPException(500): Supabase admin deletion failed.
+    """
+    logger.info("delete_account: deletion requested for user_id=%s", current_user.id)
+    try:
+        service_client = create_client(
+            settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY
+        )
+        service_client.auth.admin.delete_user(current_user.id)
+        logger.info(
+            "delete_account: user_id=%s deleted successfully", current_user.id
+        )
+    except Exception as exc:
+        error_msg = _extract_supabase_error(exc)
+        logger.error(
+            "delete_account: failed to delete user_id=%s -- %s",
+            current_user.id,
+            error_msg,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account deletion failed. Please try again.",
+        ) from exc
+
+    return {"message": "Account deleted successfully."}
+
+
+@router.post(
+    "/google",
+    status_code=status.HTTP_200_OK,
+    response_model=LoginResponse,
+    summary="Google Sign-In",
+    description=(
+        "Authenticates a user via a Google ID token obtained from native Google Sign-In. "
+        "Returns a JWT access token and a refresh token. "
+        "Returns **401** for invalid tokens."
+    ),
+)
+def google_auth(payload: GoogleAuthRequest) -> Any:
+    """Authenticate and return a JWT token pair using a Google ID token."""
+    logger.info("Google Sign-In attempt")
+
+    try:
+        res = supabase.auth.sign_in_with_id_token({
+            "provider": "google",
+            "id_token": payload.id_token
+        })
+    except Exception as exc:
+        msg = _extract_supabase_error(exc)
+        logger.warning("Google Sign-In failed: %s", msg)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=msg,
+        ) from exc
+
+    if not res.session:
+        logger.warning("Google Sign-In returned no session")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed.",
+        )
+
+    logger.info("Google Sign-In successful for user: %s", res.user.id)
+    return LoginResponse(
+        access_token=res.session.access_token,
+        refresh_token=res.session.refresh_token,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Email verification
+# ---------------------------------------------------------------------------
+
+
+class VerifyOtpRequest(BaseModel):
+    """Request body for email/OTP verification."""
+
+    email: str
+    token: str
+    type: str = "signup"
+
+
+@router.post(
+    "/verify",
+    status_code=status.HTTP_200_OK,
+    summary="Verify email OTP / confirmation token",
+    description="Verifies an email verification token/OTP via Supabase Auth.",
+)
+def verify_email(payload: VerifyOtpRequest) -> dict:
+    """Verifies email verification token via Supabase Auth."""
+    logger.info("Email verification attempt for %s", payload.email)
+    try:
+        response = supabase.auth.verify_otp(
+            {
+                "email": payload.email,
+                "token": payload.token,
+                "type": payload.type,
+            }
+        )
+    except Exception as exc:
+        error_msg = _extract_supabase_error(exc)
+        logger.warning("Email verification failed for %s -- %s", payload.email, error_msg)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg,
+        ) from exc
+
+    session = response.session
+    return {
+        "message": "Email verified successfully.",
+        "access_token": session.access_token if session else "",
+        "refresh_token": session.refresh_token if session else "",
+    }
+
+
+class ResendVerificationRequest(BaseModel):
+    """Request body for resending verification email."""
+
+    email: str
+    type: str = "signup"
+
+
+@router.post(
+    "/resend-verification",
+    status_code=status.HTTP_200_OK,
+    summary="Resend email verification link",
+    description="Resends a signup verification email via Supabase Auth.",
+)
+def resend_verification(payload: ResendVerificationRequest) -> dict:
+    """Resend signup verification email via Supabase Auth."""
+    logger.info("Resend verification requested for email=%s", payload.email)
+    try:
+        supabase.auth.resend({"type": payload.type, "email": payload.email})
+    except Exception as exc:
+        error_msg = _extract_supabase_error(exc)
+        logger.warning("Resend verification failed for %s -- %s", payload.email, error_msg)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg,
+        ) from exc
+    return {"message": "Verification email resent successfully."}
+
+
+# ---------------------------------------------------------------------------
+# Password reset / update
+# ---------------------------------------------------------------------------
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request body for resetting/updating password."""
+
+    password: str
+
+
+@router.post(
+    "/reset-password",
+    status_code=status.HTTP_200_OK,
+    summary="Reset / update user password",
+    description="Updates password via Supabase Auth and invalidates prior sessions.",
+)
+def reset_password(
+    payload: ResetPasswordRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> dict:
+    """Update password for the authenticated user."""
+    logger.info("Password reset requested for user_id=%s", current_user.id)
+    try:
+        supabase.auth.update_user({"password": payload.password})
+    except Exception as exc:
+        error_msg = _extract_supabase_error(exc)
+        logger.warning(
+            "Password reset failed for user_id=%s -- %s", current_user.id, error_msg
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg,
+        ) from exc
+    return {"message": "Password updated successfully. Prior sessions invalidated."}

@@ -12,5 +12,6 @@ langgraph-checkpoint-postgres
 psycopg[binary]
 groq
 google-genai
+google-auth
 apscheduler>=3.10,<4
 firebase-admin>=6.5.0

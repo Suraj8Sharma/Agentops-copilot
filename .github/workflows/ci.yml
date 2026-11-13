@@ -30,6 +30,8 @@ jobs:
           SUPABASE_URL: https://ci-placeholder.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
         run: pytest app/tests -v
+      - name: Verify Eval Thresholds
+        run: python -m app.eval.runner --check-results
 
   mobile:
     name: Mobile lint + test
@@ -52,5 +54,11 @@ jobs:
         run: flutter test test/plan_view_screen_test.dart
       - name: Approval screen widget tests (safety-critical)
         run: flutter test test/approval_screen_test.dart
+      # D25 - FR5/FR6: Coverage measurement.
+      # Generates coverage/lcov.info; check against A7 thresholds (80% overall,
+      # 100% on Approval Screen and Plan View) using the lcov report.
+      # See docs/testing-conventions.md for how to read the report.
+      - name: Test with coverage (flutter test)
+        run: flutter test --coverage
       - name: Test (flutter test)
         run: flutter test

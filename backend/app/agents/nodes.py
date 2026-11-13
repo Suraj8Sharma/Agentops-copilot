@@ -81,9 +81,9 @@ _STUB_PLANS: dict[str, list[Step]] = {
             tool_name="calendar.create_event_internal_only",
             mcp_server="calendar",
             input_params={
-                "title": "[placeholder] Meeting",
-                "start": "TBD",
-                "end": "TBD",
+                "summary": "[placeholder] Meeting",
+                "start": {"dateTime": "TBD"},
+                "end": {"dateTime": "TBD"},
                 "attendees": [],
             },
         )
@@ -93,10 +93,10 @@ _STUB_PLANS: dict[str, list[Step]] = {
             tool_name="calendar.create_event_external_attendee",
             mcp_server="calendar",
             input_params={
-                "title": "[placeholder] Meeting",
-                "start": "TBD",
-                "end": "TBD",
-                "attendees": ["external@example.com"],
+                "summary": "[placeholder] Meeting",
+                "start": {"dateTime": "TBD"},
+                "end": {"dateTime": "TBD"},
+                "attendees": [{"email": "external@example.com"}],
             },
         )
     ],
@@ -244,14 +244,20 @@ async def plan(state: AgentState) -> dict[str, Any]:
     template_steps = _STUB_PLANS.get(intent, [])
     template_json = [dict(s) for s in template_steps]
 
+    import datetime
+
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
     prompt = (
         f"You are the planning module of an AI agent.\n"
         f"The user's intent is '{intent}'.\n"
-        f"The user's raw request is '{raw}'.\n\n"
+        f"The user's raw request is '{raw}'.\n"
+        f"The current time is {now_iso}.\n\n"
         f"Here is the JSON template for the steps required for this intent:\n"
         f"{json.dumps(template_json, indent=2)}\n\n"
         f"Your task is to fill in the [placeholder] and TBD values with actual parameters extracted from the user's request. "  # noqa: E501
-        f"For dates or times, format them appropriately or leave them as TBD if completely unspecified. "  # noqa: E501
+        f"For calendar dates/times, YOU MUST use strict ISO-8601 format (e.g. '2026-09-24T15:00:00Z'). "  # noqa: E501
+        f"If the user does not specify an end time for an event, automatically calculate it as 1 hour after the start time. "  # noqa: E501
         f"Output ONLY a raw JSON array matching this structure. Do NOT include markdown blocks like ```json ... ```, just the array itself."  # noqa: E501
     )
 
@@ -449,6 +455,9 @@ _RETRY_BACKOFF_BASE = 2  # seconds; retry 1→2s, 2→4s, 3→8s
 
 def route_step(state: AgentState) -> str:
     """Conditional router after risk_tag, execute, or approval_gate."""
+    if state.get("error"):
+        return "END"
+
     steps = state.get("plan") or []
     current = state.get("current_step_index", 0)
 
@@ -524,6 +533,13 @@ def approval_gate_node(state: AgentState) -> dict[str, Any]:
             supabase_admin.table("tasks").update({"status": "failed"}).eq("id", task_id).execute()
         except Exception:
             pass
+        if step_id:
+            try:
+                supabase_admin.table("plan_steps").update({"status": "failed"}).eq(
+                    "id", step_id
+                ).execute()
+            except Exception:
+                pass
         # returning error halts the graph implicitly
         return {"error": "human_rejected"}
 
@@ -553,6 +569,19 @@ def execute(state: AgentState) -> dict[str, Any]:
         return {}
 
     step = steps[idx]
+    risk_flags = state.get("risk_flags", {})
+    decision = risk_flags.get(idx, {})
+
+    # Safety Invariant Defense: If step requires approval, verify that approval was explicitly granted  # noqa: E501
+    if decision.get("requires_approval", True):
+        # Must not execute directly without approval
+        logger.critical(
+            "CRITICAL SECURITY ALERT: execute() called on high-risk step without approval! [step=%d, tool=%s]",  # noqa: E501
+            idx,
+            step.get("tool_name"),
+        )
+        return {"error": "unauthorized_execution_attempt", "status": "blocked"}
+
     plan_id = state.get("plan_id")
     task_id = state["task_id"]
     user_id = state["user_id"]

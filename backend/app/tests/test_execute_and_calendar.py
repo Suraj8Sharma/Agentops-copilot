@@ -104,11 +104,15 @@ def _make_supabase_mock():
             s = MagicMock()
             s.eq.return_value = s
             s.limit.return_value = s
-            s.execute.return_value = MagicMock(data=[{
-                "access_token": GOOGLE_TOKEN,
-                "refresh_token": None,
-                "expires_at": "2099-01-01T00:00:00+00:00",
-            }])
+            s.execute.return_value = MagicMock(
+                data=[
+                    {
+                        "access_token": GOOGLE_TOKEN,
+                        "refresh_token": None,
+                        "expires_at": "2099-01-01T00:00:00+00:00",
+                    }
+                ]
+            )
             return s
 
         def insert_side_effect(payload):
@@ -126,14 +130,16 @@ def _make_supabase_mock():
 
 
 def _make_httpx_response(status_code: int = 200, json_body: dict | None = None):
-    """Build a mock httpx response."""
+    """Build a mock httpx response.
+
+    Calendar REST API returns the resource directly (not a JSON-RPC envelope).
+    """
     resp = MagicMock()
     resp.status_code = status_code
     resp.is_success = 200 <= status_code < 300
     resp.json.return_value = json_body or {
-        "jsonrpc": "2.0",
-        "id": f"{PLAN_ID}:0",
-        "result": {"events": []},
+        "items": [{"id": "evt1", "summary": "Team standup"}],
+        "kind": "calendar#events",
     }
     return resp
 
@@ -144,7 +150,7 @@ def _make_httpx_response(status_code: int = 200, json_body: dict | None = None):
 
 
 def test_execute_node_runs_low_risk_calendar_tool():
-    """Low-risk step calls the calendar MCP client and logs success."""
+    """Low-risk step calls the calendar client (REST) and logs success."""
     from app.agents.nodes import execute
 
     step = _low_risk_step()
@@ -154,27 +160,23 @@ def test_execute_node_runs_low_risk_calendar_tool():
     )
 
     mock_supabase = _make_supabase_mock()
+    # Google Calendar REST API returns items directly, not a JSON-RPC envelope
     mock_response = _make_httpx_response(
         200,
-        {
-            "jsonrpc": "2.0",
-            "id": f"{PLAN_ID}:0",
-            "result": {"events": [{"id": "evt1", "summary": "Team standup"}]},
-        },
+        {"items": [{"id": "evt1", "summary": "Team standup"}], "kind": "calendar#events"},
     )
 
     with (
         patch("app.agents.nodes.supabase_admin", mock_supabase),
         patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
         patch(REFRESH_PATCH, mock_supabase),
-        patch("httpx.post", return_value=mock_response),
+        patch("httpx.get", return_value=mock_response),  # list_events uses GET
     ):
         result = execute(state)
 
     assert result["step_results"][0]["status"] == "success"
-    assert result["step_results"][0]["output"] == {
-        "events": [{"id": "evt1", "summary": "Team standup"}]
-    }
+    # The output is the full REST response body
+    assert result["step_results"][0]["output"]["items"][0]["id"] == "evt1"
     assert result["step_results"][0]["latency_ms"] >= 0
 
 
@@ -205,28 +207,33 @@ def test_execute_node_skips_high_risk_step():
 
 
 def test_mcp_calendar_client_idempotency():
-    """calendar.call() passes the idempotency key in the request headers."""
+    """calendar.call() passes the idempotency key as X-Idempotency-Token for create calls."""
     from app.mcp_clients.calendar import call
 
     mock_supabase = _make_supabase_mock()
-    mock_response = _make_httpx_response()
+    # create_event uses POST, and the idempotency token goes in the header
+    create_resp = _make_httpx_response(200, {"id": "evt_new", "status": "confirmed"})
 
     with (
         patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
         patch(REFRESH_PATCH, mock_supabase),
-        patch("httpx.post", return_value=mock_response) as mock_post,
+        patch("httpx.post", return_value=create_resp) as mock_post,
     ):
         idempotency_key = f"{PLAN_ID}:0"
         call(
-            tool_name="calendar.list_events",
-            input_params={"date_range": "2026-09-08"},
+            tool_name="calendar.create_event_internal_only",
+            input_params={
+                "summary": "Standup",
+                "start": {"dateTime": "2026-09-08T09:00:00Z"},
+                "end": {"dateTime": "2026-09-08T09:30:00Z"},
+            },
             user_id=USER_ID,
             idempotency_key=idempotency_key,
         )
 
     call_kwargs = mock_post.call_args
     sent_headers = call_kwargs.kwargs["headers"]
-    assert sent_headers["X-Idempotency-Key"] == idempotency_key
+    assert sent_headers["X-Idempotency-Token"] == idempotency_key
     assert sent_headers["Authorization"] == f"Bearer {GOOGLE_TOKEN}"
 
 
@@ -245,7 +252,7 @@ def test_execution_logs_latency():
     with (
         patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
         patch(REFRESH_PATCH, mock_supabase),
-        patch("httpx.post", return_value=mock_response),
+        patch("httpx.get", return_value=mock_response),  # list_events uses GET
     ):
         result = call(
             tool_name="calendar.list_events",
@@ -329,7 +336,7 @@ def test_execute_marks_task_failed_on_mcp_error():
         patch("app.agents.nodes.supabase_admin", mock_supabase),
         patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
         patch(REFRESH_PATCH, mock_supabase),
-        patch("httpx.post", return_value=error_response),
+        patch("httpx.get", return_value=error_response),  # list_events uses GET
         patch("time.sleep"),
     ):  # skip backoff in tests
         result = execute(state)
@@ -357,7 +364,8 @@ def test_execute_retries_on_transient_error():
 
     rate_limited = _make_httpx_response(429, {})
     rate_limited.is_success = False
-    success = _make_httpx_response(200, {"jsonrpc": "2.0", "id": "x", "result": {"events": []}})
+    # Success returns a direct REST response
+    success = _make_httpx_response(200, {"items": [{"id": "evt1"}], "kind": "calendar#events"})
 
     call_count = {"n": 0}
 
@@ -371,7 +379,7 @@ def test_execute_retries_on_transient_error():
         patch("app.agents.nodes.supabase_admin", mock_supabase),
         patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
         patch(REFRESH_PATCH, mock_supabase),
-        patch("httpx.post", side_effect=httpx_side_effect),
+        patch("httpx.get", side_effect=httpx_side_effect),  # list_events uses GET
         patch("time.sleep"),
     ):
         result = execute(state)
@@ -478,10 +486,12 @@ def test_calendar_client_returns_error_on_no_token():
     with (
         patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
         patch(REFRESH_PATCH, mock_supabase),
+        patch("httpx.get") as mock_get,
         patch("httpx.post") as mock_post,
     ):
         result = call("calendar.list_events", {}, USER_ID, f"{PLAN_ID}:0")
 
+    mock_get.assert_not_called()
     mock_post.assert_not_called()
     assert result["status"] == "error"
     assert "token" in result["error"]
@@ -503,7 +513,7 @@ def test_calendar_client_handles_401_unauthorized():
     with (
         patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
         patch(REFRESH_PATCH, mock_supabase),
-        patch("httpx.post", return_value=resp_401),
+        patch("httpx.get", return_value=resp_401),  # list_events uses GET
     ):
         result = call("calendar.list_events", {}, USER_ID, f"{PLAN_ID}:0")
 
@@ -527,7 +537,7 @@ def test_calendar_client_handles_429_rate_limited():
     with (
         patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
         patch(REFRESH_PATCH, mock_supabase),
-        patch("httpx.post", return_value=resp_429),
+        patch("httpx.get", return_value=resp_429),  # list_events uses GET
     ):
         result = call("calendar.list_events", {}, USER_ID, f"{PLAN_ID}:0")
 
@@ -550,7 +560,9 @@ def test_calendar_client_handles_timeout():
     with (
         patch("app.mcp_clients.calendar.supabase_admin", mock_supabase),
         patch(REFRESH_PATCH, mock_supabase),
-        patch("httpx.post", side_effect=httpx_mod.TimeoutException("timed out")),
+        patch(
+            "httpx.get", side_effect=httpx_mod.TimeoutException("timed out")
+        ),  # list_events uses GET
     ):
         result = call("calendar.list_events", {}, USER_ID, f"{PLAN_ID}:0")
 

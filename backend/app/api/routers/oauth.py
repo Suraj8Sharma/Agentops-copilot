@@ -137,6 +137,13 @@ PROVIDER_CONFIG: dict[str, dict] = {
 # Derived from PROVIDER_CONFIG so there's a single source of truth.
 _SUPPORTED_PROVIDERS: frozenset[str] = frozenset(PROVIDER_CONFIG)
 
+# Provider names as stored in oauth_connections.provider — used to validate
+# DELETE /oauth/{provider}.  These differ from _SUPPORTED_PROVIDERS which
+# uses the OAuth-flow names ("google", "github", "slack").
+_VALID_DISCONNECT_PROVIDERS: frozenset[str] = frozenset(
+    {"google_calendar", "gmail", "github", "slack"}
+)
+
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
@@ -801,6 +808,14 @@ def delete_connection(
     provider: str,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict:
+    if provider not in _VALID_DISCONNECT_PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Unknown OAuth provider: {provider!r}. "
+                f"Valid providers: {', '.join(sorted(_VALID_DISCONNECT_PROVIDERS))}."
+            ),
+        )
     from app.db.supabase_client import create_client
     service_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
     service_client.table("oauth_connections").delete().eq(
