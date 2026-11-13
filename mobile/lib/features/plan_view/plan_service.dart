@@ -49,6 +49,12 @@ class PlanService {
     }
   }
 
+  static List<PlanStep> _sortStepsByIndex(List<PlanStep> steps) {
+    final sorted = List<PlanStep>.from(steps);
+    sorted.sort((a, b) => a.stepIndex.compareTo(b.stepIndex));
+    return sorted;
+  }
+
   static Future<MockPlan> fetchPlan(String taskId) async {
     if (fetchPlanOverride != null) {
       return fetchPlanOverride!(taskId);
@@ -103,12 +109,14 @@ class PlanService {
         );
       }).toList();
 
+      final orderedSteps = _sortStepsByIndex(steps);
+
       return MockPlan(
         id: taskPlanJson['id'] as String,
         taskId: taskPlanJson['task_id'] as String,
         plannerVersion: taskPlanJson['planner_version'] as String,
         status: taskPlanJson['status'] as String,
-        steps: steps,
+        steps: orderedSteps,
       );
     } else if (response.statusCode == 404) {
       throw const PlanNotFoundException('Plan not ready yet');

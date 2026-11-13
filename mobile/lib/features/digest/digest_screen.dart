@@ -233,7 +233,11 @@ class _FilterBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.screenPadding, AppSpacing.sm, AppSpacing.screenPadding, 0),
+        AppSpacing.screenPadding,
+        AppSpacing.sm,
+        AppSpacing.screenPadding,
+        0,
+      ),
       child: Row(
         children: _DigestFilter.values.map((filter) {
           final isSelected = filter == selected;
@@ -246,10 +250,9 @@ class _FilterBar extends StatelessWidget {
               onSelected: (_) => onChanged(filter),
               selectedColor: AppColors.primaryLight,
               labelStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: isSelected ? AppColors.primary : AppColors.neutral500,
-                    fontWeight:
-                        isSelected ? FontWeight.w600 : FontWeight.normal,
-                  ),
+                color: isSelected ? AppColors.primary : AppColors.neutral500,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
             ),
           );
         }).toList(),
@@ -286,7 +289,6 @@ class _DigestCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header row — badge + date
             Row(
               children: [
                 Container(
@@ -296,8 +298,7 @@ class _DigestCard extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: bgColor,
-                    borderRadius:
-                        BorderRadius.circular(AppSpacing.buttonRadius),
+                    borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -306,38 +307,39 @@ class _DigestCard extends StatelessWidget {
                       const SizedBox(width: AppSpacing.xs),
                       Text(
                         label,
-                        style: textTheme.labelMedium
-                            ?.copyWith(color: color, fontWeight: FontWeight.w700),
+                        style: textTheme.labelMedium?.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const Spacer(),
-                Text(dateStr,
-                    style: textTheme.bodySmall
-                        ?.copyWith(color: AppColors.neutral500)),
+                Text(
+                  dateStr,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: AppColors.neutral500,
+                  ),
+                ),
               ],
             ),
-
             const SizedBox(height: AppSpacing.sm),
             const Divider(height: 1),
             const SizedBox(height: AppSpacing.sm),
-
-            // Summary text
             Text(
               digest.summaryText,
               style: textTheme.bodyMedium,
             ),
-
-            // Tasks included footer (if any)
             if (digest.tasksIncluded.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.sm),
               const Divider(height: 1),
               const SizedBox(height: AppSpacing.xs),
               Text(
                 '${digest.tasksIncluded.length} task${digest.tasksIncluded.length == 1 ? '' : 's'} included',
-                style: textTheme.bodySmall
-                    ?.copyWith(color: AppColors.neutral500),
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppColors.neutral500,
+                ),
               ),
             ],
           ],
@@ -362,11 +364,16 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.summarize_outlined,
-                size: AppSpacing.xxl, color: AppColors.neutral500),
+            const Icon(
+              Icons.summarize_outlined,
+              size: AppSpacing.xxl,
+              color: AppColors.neutral500,
+            ),
             const SizedBox(height: AppSpacing.md),
-            Text('No digests yet',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'No digests yet',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: AppSpacing.xs),
             Text(
               'Your first daily digest will appear here tomorrow morning.\nWeekly digests arrive every Monday.',
@@ -394,15 +401,22 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline,
-                size: AppSpacing.xxl, color: AppColors.error),
+            const Icon(
+              Icons.error_outline,
+              size: AppSpacing.xxl,
+              color: AppColors.error,
+            ),
             const SizedBox(height: AppSpacing.md),
-            Text('Could not load digests',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Could not load digests',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: AppSpacing.xs),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
             const SizedBox(height: AppSpacing.lg),
             ElevatedButton.icon(
               onPressed: onRetry,
