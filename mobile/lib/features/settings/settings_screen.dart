@@ -41,6 +41,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _logout() async {
+    try {
+      await AuthService.logout();
+    } catch (_) {
+      if (!mounted || !context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to log out. Please try again.')),
+      );
+      return;
+    }
+
+    if (!mounted || !context.mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/sign-in', (_) => false);
+  }
+
   Future<void> _deleteAccount() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -68,7 +83,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _deleting = true);
     try {
       await SettingsService.deleteAccount();
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
       Navigator.of(context).pushNamedAndRemoveUntil('/sign-in', (_) => false);
     } catch (e) {
       if (!mounted) return;
@@ -76,6 +91,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _deleting = false;
         _error = e.toString();
       });
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString())),
       );
@@ -145,12 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: () async {
-                          await AuthService.logout();
-                          if (mounted) {
-                            Navigator.of(context).pushNamedAndRemoveUntil('/sign-in', (_) => false);
-                          }
-                        },
+                        onPressed: _logout,
                         icon: const Icon(Icons.logout),
                         label: const Text('Log out'),
                       ),

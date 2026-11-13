@@ -20,7 +20,7 @@ class SettingsService {
       },
     );
 
-    if (response.statusCode == 401 && AuthService.refreshSession != null) {
+    if (response.statusCode == 401) {
       // refreshSession is a static method, so we call it directly.
       try {
         await AuthService.refreshSession();
