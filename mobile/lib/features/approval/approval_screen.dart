@@ -180,7 +180,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
         ),
       );
     }
-    if (_errorMessage != null) {
+    if (_errorMessage != null && _pending.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
@@ -223,6 +223,10 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       padding: const EdgeInsets.all(AppSpacing.screenPadding),
       children: <Widget>[
         const _ScreenHeader(),
+        if (_errorMessage != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.sm),
+          _DecisionErrorBanner(message: _errorMessage!),
+        ],
         const SizedBox(height: AppSpacing.md),
         for (final step in _pending) ...<Widget>[
           if (_plans.containsKey(step.taskId))
@@ -247,7 +251,9 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
           return Column(
             children: [
               PlanStepCard(step: pStep, isLast: isLast),
-              if (pStep.id == pendingStep.id && pStep.status == PlanStepStatus.awaitingApproval) ...[
+              if (pStep.id == pendingStep.id &&
+                  pStep.status == PlanStepStatus.awaitingApproval &&
+                  pendingStep.status == 'awaiting_approval') ...[
                 const SizedBox(height: AppSpacing.sm),
                 _buildApprovalControls(context, pendingStep),
                 const SizedBox(height: AppSpacing.md),
@@ -267,7 +273,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
           _RiskCard(step: step)
         else
           const _UnexpectedRiskState(),
-        if (step.requiresApproval) ...<Widget>[
+        if (step.requiresApproval && step.status == 'awaiting_approval') ...<Widget>[
           const SizedBox(height: AppSpacing.md),
           _DecisionButtons(
             isProcessing: _processing.contains(step.id),
@@ -331,6 +337,29 @@ class _ScreenHeader extends StatelessWidget {
       );
 }
 
+class _DecisionErrorBanner extends StatelessWidget {
+  const _DecisionErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        key: const Key('approval-decision-error'),
+        color: AppColors.riskHighBg,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Icon(Icons.error_outline, color: AppColors.error),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: Text(message)),
+            ],
+          ),
+        ),
+      );
+}
+
 class _RiskCard extends StatelessWidget {
   const _RiskCard({required this.step});
   final ApprovalStep step;
@@ -387,6 +416,33 @@ class _RiskCard extends StatelessWidget {
                   'This description is advisory only and does not affect the outcome of your decision.',
                   key: const Key('explanation-advisory-disclaimer'),
                   style: Theme.of(context).textTheme.bodySmall),
+              // FR-AP SS5.2 - structured params alongside explanation (fail-closed):
+              if (step.inputParams.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text('Parameters',
+                    key: const Key('approval-input-params-label'),
+                    style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: AppSpacing.xs),
+                ...step.inputParams.entries.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${e.key}: ',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+                        Expanded(
+                          child: Text(
+                            e.value.toString(),
+                            key: Key('approval-param-${e.key}'),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

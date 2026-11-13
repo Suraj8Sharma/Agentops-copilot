@@ -51,14 +51,38 @@ jobs:
       - name: Auth design QA widget tests
         run: flutter test test/auth_design_qa_test.dart
       - name: Agent plan view widget tests
-        run: flutter test test/plan_view_screen_test.dart
+        run: flutter test test/screens/plan_view_test.dart
       - name: Approval screen widget tests (safety-critical)
-        run: flutter test test/approval_screen_test.dart
+        run: flutter test test/screens/approval_screen_test.dart
       # D25 - FR5/FR6: Coverage measurement.
       # Generates coverage/lcov.info; check against A7 thresholds (80% overall,
       # 100% on Approval Screen and Plan View) using the lcov report.
       # See docs/testing-conventions.md for how to read the report.
       - name: Test with coverage (flutter test)
         run: flutter test --coverage
+      - name: Enforce trust-surface coverage
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          data = Path('coverage/lcov.info').read_text()
+          current = None
+          found = {}
+          for line in data.splitlines():
+              if line.startswith('SF:'):
+                  current = line[3:]
+                  found[current] = [0, 0]
+              elif line.startswith('DA:') and current is not None:
+                  hits = int(line.split(',')[1].split(',')[0])
+                  found[current][1] += 1
+                  found[current][0] += hits > 0
+          required = ('lib/features/plan_view/plan_view_screen.dart',
+                      'lib/features/approval/approval_screen.dart')
+          for name in required:
+              matches = [v for k, v in found.items() if k.endswith(name)]
+              if not matches or matches[0][1] == 0 or matches[0][0] != matches[0][1]:
+                  raise SystemExit(f'{name} is not at 100% line coverage')
+          PY
       - name: Test (flutter test)
         run: flutter test

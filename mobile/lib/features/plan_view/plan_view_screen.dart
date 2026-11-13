@@ -275,6 +275,13 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
     }
 
     final plan = _plan!;
+    if (plan.status != 'active') {
+      return const Center(child: _EmptyPlanState());
+    }
+    // FR-PV-1 / test_plan_view_sorts_by_step_index:
+    // Always display by stepIndex, not arrival order.
+    final sortedSteps = List<PlanStep>.from(plan.steps)
+      ..sort((a, b) => a.stepIndex.compareTo(b.stepIndex));
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.screenPadding),
       child: Column(
@@ -290,13 +297,19 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
           const SizedBox(height: AppSpacing.md),
           PlanSummary(plan: plan),
           const SizedBox(height: AppSpacing.lg),
-          if (plan.steps.isEmpty)
+          if (sortedSteps.isEmpty)
             const _EmptyPlanState()
           else
-            ...plan.steps.asMap().entries.map(
+            ...sortedSteps.asMap().entries.map(
                   (entry) => PlanStepCard(
                     step: entry.value,
-                    isLast: entry.key == plan.steps.length - 1,
+                    isLast: entry.key == sortedSteps.length - 1,
+                    // FR-PV-5: awaiting approval steps offer navigation to Approval Screen.
+                    onReviewApproval:
+                        entry.value.status == PlanStepStatus.awaitingApproval
+                            ? () =>
+                                Navigator.of(context).pushNamed(AppRoutes.approval)
+                            : null,
                   ),
                 ),
         ],
@@ -345,9 +358,16 @@ class PlanSummary extends StatelessWidget {
 }
 
 class PlanStepCard extends StatelessWidget {
-  const PlanStepCard({super.key, required this.step, required this.isLast});
+  const PlanStepCard({
+    super.key,
+    required this.step,
+    required this.isLast,
+    this.onReviewApproval,
+  });
   final PlanStep step;
   final bool isLast;
+  // FR-PV-5: callback for awaiting-approval navigation (null = not applicable).
+  final VoidCallback? onReviewApproval;
 
   @override
   Widget build(BuildContext context) {
@@ -386,128 +406,159 @@ class PlanStepCard extends StatelessWidget {
             child: Card(
               key: Key('plan-step-${step.id}'),
               margin: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      step.toolName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text('Integration: ${step.mcpServer}',
-                        style: Theme.of(context).textTheme.bodyMedium),
-                    const SizedBox(height: AppSpacing.sm),
-                    Wrap(
-                      spacing: AppSpacing.sm,
-                      runSpacing: AppSpacing.xs,
-                      children: <Widget>[
-                        StatusChip(
-                          label: step.riskTier.label,
-                          color: step.riskTier.color,
-                          backgroundColor: step.riskTier.background,
-                        ),
-                        StatusChip(
-                          label: status.label,
-                          color: status.color,
-                          backgroundColor: status.backgroundColor,
-                          icon: status.icon,
+              child: InkWell(
+                // FR-PV-5: tapping an awaiting-approval card navigates to Approval Screen.
+                onTap: onReviewApproval,
+                borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        step.toolName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text('Integration: ${step.mcpServer}',
+                          style: Theme.of(context).textTheme.bodyMedium),
+                      const SizedBox(height: AppSpacing.sm),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.xs,
+                        children: <Widget>[
+                          StatusChip(
+                            label: step.riskTier.label,
+                            color: step.riskTier.color,
+                            backgroundColor: step.riskTier.background,
+                          ),
+                          if (step.requiresApproval)
+                            const StatusChip(
+                              key: Key('requires-approval-badge'),
+                              label: 'APPROVAL REQUIRED',
+                              color: AppColors.riskHigh,
+                              backgroundColor: AppColors.riskHighBg,
+                            ),
+                          StatusChip(
+                            label: status.label,
+                            color: status.color,
+                            backgroundColor: status.backgroundColor,
+                            icon: status.icon,
+                          ),
+                        ],
+                      ),
+                      if (step.inputParams.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        const Divider(height: 1),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text('Input',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelMedium
+                                ?.copyWith(color: AppColors.neutral500)),
+                        const SizedBox(height: AppSpacing.xs),
+                        ...step.inputParams.entries.map(
+                          (e) => Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.xs),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('${e.key}: ',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                            fontWeight: FontWeight.w600)),
+                                Expanded(
+                                  child: Text(
+                                    '${e.value}',
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
-                    ),
-                    if (step.inputParams.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      const Divider(height: 1),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text('Input',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelMedium
-                              ?.copyWith(color: AppColors.neutral500)),
-                      const SizedBox(height: AppSpacing.xs),
-                      ...step.inputParams.entries.map(
-                        (e) => Padding(
-                          padding:
-                              const EdgeInsets.only(bottom: AppSpacing.xs),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('${e.key}: ',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                          fontWeight: FontWeight.w600)),
-                              Expanded(
-                                child: Text(
-                                  '${e.value}',
-                                  style:
-                                      Theme.of(context).textTheme.bodySmall,
+                      if (status == PlanStepStatus.done &&
+                          step.output != null) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        const Divider(height: 1),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text('Result',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelMedium
+                                ?.copyWith(color: AppColors.success)),
+                        const SizedBox(height: AppSpacing.xs),
+                        ...step.output!.entries.map(
+                          (e) => Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.xs),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('${e.key}: ',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                            fontWeight: FontWeight.w600)),
+                                Expanded(
+                                  child: Text(
+                                    '${e.value}',
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                    if (status == PlanStepStatus.done &&
-                        step.output != null) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      const Divider(height: 1),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text('Result',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelMedium
-                              ?.copyWith(color: AppColors.success)),
-                      const SizedBox(height: AppSpacing.xs),
-                      ...step.output!.entries.map(
-                        (e) => Padding(
-                          padding:
-                              const EdgeInsets.only(bottom: AppSpacing.xs),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('${e.key}: ',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                          fontWeight: FontWeight.w600)),
-                              Expanded(
-                                child: Text(
-                                  '${e.value}',
-                                  style:
-                                      Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ),
-                            ],
-                          ),
+                      ],
+                      if (status == PlanStepStatus.awaitingApproval) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'This step gates the steps that follow.',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: AppColors.riskMedium,
+                                  ),
                         ),
-                      ),
-                    ],
-                    if (status == PlanStepStatus.awaitingApproval) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        'This step gates the steps that follow.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.riskMedium,
+                        if (onReviewApproval != null) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          GestureDetector(
+                            key: Key('review-approval-button-${step.id}'),
+                            onTap: onReviewApproval,
+                            child: Text(
+                              'Tap to review →',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: AppColors.primary,
+                                    decoration: TextDecoration.underline,
+                                  ),
                             ),
-                      ),
+                          ),
+                        ],
+                      ],
+                      if (status == PlanStepStatus.failed) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'Later steps may not run until this is resolved.',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: AppColors.error,
+                                  ),
+                        ),
+                      ],
                     ],
-                    if (status == PlanStepStatus.failed) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        'Later steps may not run until this is resolved.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.error,
-                            ),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ),
             ),

@@ -45,6 +45,9 @@ class PlanService {
       case 'failed':
         return PlanStepStatus.failed;
       default:
+        // Unknown backend states must not be interpreted as successful or
+        // actionable. The UI renders pending and the caller forces approval
+        // for the same fail-closed path.
         return PlanStepStatus.pending;
     }
   }
@@ -85,19 +88,39 @@ class PlanService {
     }
 
     if (response.statusCode == 200) {
-      final decoded = jsonDecode(response.body);
-      final taskPlanJson = decoded['task_plan'];
-      final planStepsList = decoded['plan_steps'] as List<dynamic>;
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      // Accept the deployed task_plan/plan_steps contract and the documented
+      // plan/steps shape while the API migration is in flight.
+      final taskPlanJson =
+          (decoded['task_plan'] ?? decoded['plan']) as Map<String, dynamic>;
+      final planStepsList =
+          (decoded['plan_steps'] ?? decoded['steps']) as List<dynamic>;
 
       final steps = planStepsList.map((stepJson) {
+        final rawStatus = stepJson['status'] as String? ?? 'unknown';
+        final rawRisk = stepJson['risk_tier'] as String? ?? 'unknown';
+        final unknownStatus = !<String>{
+          'pending',
+          'awaiting_approval',
+          'approved',
+          'rejected',
+          'executing',
+          'done',
+          'failed',
+        }.contains(rawStatus);
+        final unknownRisk = !<String>{'low', 'medium', 'high'}
+            .contains(rawRisk);
         return PlanStep(
           id: stepJson['id'] as String,
           stepIndex: stepJson['step_index'] as int,
           toolName: stepJson['tool_name'] as String,
           mcpServer: stepJson['mcp_server'] as String,
-          riskTier: _parseRiskTier(stepJson['risk_tier'] as String),
-          requiresApproval: stepJson['requires_approval'] as bool,
-          status: _parseStatus(stepJson['status'] as String),
+          riskTier: _parseRiskTier(rawRisk),
+          // Never let an unrecognised value become a safe, one-tap path.
+          requiresApproval: unknownRisk || unknownStatus
+              ? true
+              : stepJson['requires_approval'] as bool? ?? true,
+          status: _parseStatus(rawStatus),
           inputParams: stepJson['input_params'] as Map<String, dynamic>? ?? {},
           output: stepJson['output'] as Map<String, dynamic>?,
         );
