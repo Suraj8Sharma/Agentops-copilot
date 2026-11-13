@@ -275,6 +275,8 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
     }
 
     final plan = _plan!;
+    final orderedSteps = List<PlanStep>.from(plan.steps)
+      ..sort((a, b) => a.stepIndex.compareTo(b.stepIndex));
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.screenPadding),
       child: Column(
@@ -290,13 +292,13 @@ class _PlanViewScreenState extends State<PlanViewScreen> {
           const SizedBox(height: AppSpacing.md),
           PlanSummary(plan: plan),
           const SizedBox(height: AppSpacing.lg),
-          if (plan.steps.isEmpty)
+          if (orderedSteps.isEmpty)
             const _EmptyPlanState()
           else
-            ...plan.steps.asMap().entries.map(
+            ...orderedSteps.asMap().entries.map(
                   (entry) => PlanStepCard(
                     step: entry.value,
-                    isLast: entry.key == plan.steps.length - 1,
+                    isLast: entry.key == orderedSteps.length - 1,
                   ),
                 ),
         ],
