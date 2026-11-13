@@ -18,10 +18,22 @@ import 'package:agentops_copilot/features/plan_view/plan_service.dart';
 // Helpers
 // ---------------------------------------------------------------------------
 
-Widget planView({MockPlan plan = mockPlan}) {
+ThemeData _goldenTheme() {
+  final theme = AppTheme.light;
+  return theme.copyWith(
+    textTheme: theme.textTheme.apply(fontFamily: 'Ahem'),
+    primaryTextTheme: theme.primaryTextTheme.apply(fontFamily: 'Ahem'),
+    appBarTheme: theme.appBarTheme.copyWith(
+      titleTextStyle:
+          theme.appBarTheme.titleTextStyle?.copyWith(fontFamily: 'Ahem'),
+    ),
+  );
+}
+
+Widget planView({MockPlan plan = mockPlan, ThemeData? theme}) {
   PlanService.fetchPlanOverride = (_) async => plan;
   return MaterialApp(
-    theme: AppTheme.light,
+    theme: theme ?? AppTheme.light,
     home: const PlanViewScreen(taskId: 'task-123'),
     onGenerateRoute: (settings) {
       if (settings.name == AppRoutes.approval) {
@@ -63,7 +75,7 @@ void main() {
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(planView());
+    await tester.pumpWidget(planView(theme: _goldenTheme()));
     await tester.pumpAndSettle();
 
     await expectLater(
@@ -85,8 +97,8 @@ void main() {
     expect(find.byKey(const Key('plan-step-plan-step-draft')), findsOneWidget);
 
     // Verify order: calendar (stepIndex 1) is above gmail (stepIndex 2).
-    final calendarCenter = tester
-        .getCenter(find.byKey(const Key('plan-step-plan-step-calendar')));
+    final calendarCenter =
+        tester.getCenter(find.byKey(const Key('plan-step-plan-step-calendar')));
     final gmailCenter =
         tester.getCenter(find.byKey(const Key('plan-step-plan-step-gmail')));
     final draftCenter =
@@ -216,8 +228,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // The gateway text must be visible.
-    expect(
-        find.text('This step gates the steps that follow.'), findsOneWidget);
+    expect(find.text('This step gates the steps that follow.'), findsOneWidget);
 
     // A tappable review link must be present.
     final reviewButton =
@@ -305,7 +316,8 @@ void main() {
   });
 
   // 10+ step plan: all render in order, list scrolls, none dropped.
-  testWidgets('test_plan_view_many_steps_all_rendered_in_order', (tester) async {
+  testWidgets('test_plan_view_many_steps_all_rendered_in_order',
+      (tester) async {
     final steps = List<PlanStep>.generate(
       12,
       (i) => PlanStep(
@@ -331,7 +343,8 @@ void main() {
 
     // Scroll to the bottom.
     for (int i = 0; i < 6; i++) {
-      await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -400));
+      await tester.drag(
+          find.byType(SingleChildScrollView), const Offset(0, -400));
       await tester.pumpAndSettle();
     }
 
@@ -385,12 +398,9 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    final aCenter =
-        tester.getCenter(find.byKey(const Key('plan-step-step-a')));
-    final bCenter =
-        tester.getCenter(find.byKey(const Key('plan-step-step-b')));
-    final cCenter =
-        tester.getCenter(find.byKey(const Key('plan-step-step-c')));
+    final aCenter = tester.getCenter(find.byKey(const Key('plan-step-step-a')));
+    final bCenter = tester.getCenter(find.byKey(const Key('plan-step-step-b')));
+    final cCenter = tester.getCenter(find.byKey(const Key('plan-step-step-c')));
 
     expect(aCenter.dy, lessThan(bCenter.dy),
         reason: 'step-a (index 1) should appear above step-b (index 2)');
@@ -522,8 +532,8 @@ void main() {
 
     expect(find.byKey(const Key('plan-step-step-active')), findsOneWidget);
     // No duplicated/stale step cards.
-    expect(find.byType(Card),
-        findsNWidgets(2)); // 1 plan-summary + 1 step card.
+    expect(
+        find.byType(Card), findsNWidgets(2)); // 1 plan-summary + 1 step card.
   });
 
   // Empty/draft plan: explicit planning state, not a blank screen.
@@ -711,8 +721,7 @@ void main() {
     expect(find.text('Integration: calendar'), findsOneWidget);
     expect(find.text('LOW RISK'), findsOneWidget);
     expect(find.text('AWAITING APPROVAL'), findsOneWidget);
-    expect(
-        find.text('This step gates the steps that follow.'), findsOneWidget);
+    expect(find.text('This step gates the steps that follow.'), findsOneWidget);
   });
 
   // Empty plan shows the empty state widget.
