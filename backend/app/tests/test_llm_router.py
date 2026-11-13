@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -219,3 +220,43 @@ async def test_route_llm_call_with_custom_models():
         mock_groq.assert_called_once()
         call_kwargs = mock_groq.call_args.kwargs
         assert call_kwargs["model"] == "custom-groq-model"
+
+
+@pytest.mark.asyncio
+async def test_route_llm_call_concurrent_free_tier_burst():
+    """
+    D32-style free-tier load test: multiple concurrent calls should serialize
+    around provider rate limits instead of hammering the APIs in parallel.
+    """
+    groq_error = LLMRateLimitError("Groq rate limited")
+    gemini_response = LLMResponse(
+        text="Recovered under burst load",
+        provider=LLMProvider.GEMINI,
+        model="gemini-3.7-flash",
+        tokens_in=12,
+        tokens_out=18,
+        latency_ms=220,
+        rate_limited=False,
+    )
+
+    with patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq:
+        mock_groq.side_effect = [groq_error, groq_error, groq_error, gemini_response]
+
+        with patch("app.llm.router.call_gemini", new_callable=AsyncMock) as mock_gemini:
+            mock_gemini.return_value = gemini_response
+
+            with patch("app.llm.router.log_llm_usage") as mock_log:
+                results = await asyncio.gather(
+                    *(
+                        route_llm_call(
+                            prompt=f"Burst call {idx}",
+                            request_type="planning",
+                        )
+                        for idx in range(3)
+                    )
+                )
+
+    assert len(results) == 3
+    assert all(r.provider == LLMProvider.GEMINI for r in results)
+    assert mock_groq.call_count >= 3
+    assert mock_log.call_count >= 3
