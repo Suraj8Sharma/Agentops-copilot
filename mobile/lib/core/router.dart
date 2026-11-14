@@ -59,7 +59,14 @@ class AppRouter {
       case AppRoutes.home:
         return _page(const HomeScreen(), settings);
       case AppRoutes.taskComposer:
-        return _page(const TaskComposerScreen(), settings);
+        final arguments = settings.arguments;
+        final onTaskSubmitted = arguments is TaskComposerRouteArgs
+            ? arguments.onTaskSubmitted
+            : null;
+        return _page(
+          TaskComposerScreen(onTaskSubmitted: onTaskSubmitted),
+          settings,
+        );
       case AppRoutes.planView:
         final taskId = settings.arguments as String?;
         return _page(PlanViewScreen(taskId: taskId ?? ''), settings);
