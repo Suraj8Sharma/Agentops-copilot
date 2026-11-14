@@ -4,6 +4,7 @@
 // FR-PV-1 to FR-PV-7 + §5.1 edge cases all covered here.
 
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -78,9 +79,13 @@ void main() {
     await tester.pumpWidget(planView(theme: _goldenTheme()));
     await tester.pumpAndSettle();
 
+    // Keep strict baselines per OS; Skia rasterizes edges differently on Linux.
+    final goldenPath = Platform.isLinux
+        ? '../golden/plan_view_baseline_linux.png'
+        : '../golden/plan_view_baseline.png';
     await expectLater(
       find.byType(MaterialApp),
-      matchesGoldenFile('../golden/plan_view_baseline.png'),
+      matchesGoldenFile(goldenPath),
     );
   });
 
