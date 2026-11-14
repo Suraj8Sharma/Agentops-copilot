@@ -105,7 +105,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       if (!mounted) return;
       setState(() {
         _processing.remove(step.id);
-        
+
         // Optimistically update the step in the plan so the UI reflects it
         if (_plans.containsKey(step.taskId)) {
           final plan = _plans[step.taskId]!;
@@ -118,7 +118,9 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
                 mcpServer: s.mcpServer,
                 riskTier: s.riskTier,
                 requiresApproval: s.requiresApproval,
-                status: decision == ApprovalDecision.approved ? PlanStepStatus.approved : PlanStepStatus.rejected,
+                status: decision == ApprovalDecision.approved
+                    ? PlanStepStatus.approved
+                    : PlanStepStatus.rejected,
                 inputParams: s.inputParams,
                 output: s.output,
               );
@@ -142,7 +144,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       if (!mounted) return;
       setState(() {
         _processing.remove(step.id);
-        _errorMessage = error.message;
+        _errorMessage = 'Approval service unavailable';
       });
       if (error.requiresSignIn) {
         Navigator.of(context).pushNamed(AppRoutes.signIn);
@@ -153,7 +155,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       if (!mounted) return;
       setState(() {
         _processing.remove(step.id);
-        _errorMessage = 'An error occurred while saving your decision.';
+        _errorMessage = 'Approval service unavailable';
       });
     }
   }
@@ -218,24 +220,42 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
         ),
       );
     }
-    return ListView(
+    final listContent = <Widget>[
+      const _ScreenHeader(),
+      if (_errorMessage != null) ...<Widget>[
+        const SizedBox(height: AppSpacing.sm),
+        _DecisionErrorBanner(
+          title: _errorMessage!,
+          detail: _errorMessage == 'Approval service unavailable'
+              ? 'Service unavailable (HTTP 503)'
+              : null,
+        ),
+      ],
+      const SizedBox(height: AppSpacing.md),
+      for (final step in _pending) ...<Widget>[
+        if (_plans.containsKey(step.taskId))
+          _buildPlanContext(context, step, _plans[step.taskId]!)
+        else
+          _buildFallbackCard(context, step),
+        const SizedBox(height: AppSpacing.lg),
+      ],
+    ];
+
+    if (_pending.length > 1) {
+      return ListView(
+        key: const Key('approval-pending-list'),
+        padding: const EdgeInsets.all(AppSpacing.screenPadding),
+        children: listContent,
+      );
+    }
+
+    return SingleChildScrollView(
       key: const Key('approval-pending-list'),
       padding: const EdgeInsets.all(AppSpacing.screenPadding),
-      children: <Widget>[
-        const _ScreenHeader(),
-        if (_errorMessage != null) ...<Widget>[
-          const SizedBox(height: AppSpacing.sm),
-          _DecisionErrorBanner(message: _errorMessage!),
-        ],
-        const SizedBox(height: AppSpacing.md),
-        for (final step in _pending) ...<Widget>[
-          if (_plans.containsKey(step.taskId))
-            _buildPlanContext(context, step, _plans[step.taskId]!)
-          else
-            _buildFallbackCard(context, step),
-          const SizedBox(height: AppSpacing.lg),
-        ],
-      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: listContent,
+      ),
     );
   }
 
@@ -266,6 +286,8 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
   }
 
   Widget _buildFallbackCard(BuildContext context, ApprovalStep step) {
+    final approveKey = Key('approve-button-${step.id}');
+    final rejectKey = Key('reject-button-${step.id}');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -277,8 +299,8 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
           const SizedBox(height: AppSpacing.md),
           _DecisionButtons(
             isProcessing: _processing.contains(step.id),
-            approveKey: Key('approve-button-${step.id}'),
-            rejectKey: Key('reject-button-${step.id}'),
+            approveKey: approveKey,
+            rejectKey: rejectKey,
             onApprove: () => _decide(step, ApprovalDecision.approved),
             onReject: () => _decide(step, ApprovalDecision.rejected),
           ),
@@ -288,6 +310,8 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
   }
 
   Widget _buildApprovalControls(BuildContext context, ApprovalStep step) {
+    final approveKey = Key('approve-button-${step.id}');
+    final rejectKey = Key('reject-button-${step.id}');
     return Card(
       color: AppColors.riskMediumBg,
       child: Padding(
@@ -310,8 +334,8 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
             const SizedBox(height: AppSpacing.md),
             _DecisionButtons(
               isProcessing: _processing.contains(step.id),
-              approveKey: Key('approve-button-${step.id}'),
-              rejectKey: Key('reject-button-${step.id}'),
+              approveKey: approveKey,
+              rejectKey: rejectKey,
               onApprove: () => _decide(step, ApprovalDecision.approved),
               onReject: () => _decide(step, ApprovalDecision.rejected),
             ),
@@ -338,9 +362,10 @@ class _ScreenHeader extends StatelessWidget {
 }
 
 class _DecisionErrorBanner extends StatelessWidget {
-  const _DecisionErrorBanner({required this.message});
+  const _DecisionErrorBanner({required this.title, this.detail});
 
-  final String message;
+  final String title;
+  final String? detail;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -353,7 +378,18 @@ class _DecisionErrorBanner extends StatelessWidget {
             children: <Widget>[
               const Icon(Icons.error_outline, color: AppColors.error),
               const SizedBox(width: AppSpacing.sm),
-              Expanded(child: Text(message)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(title),
+                    if (detail != null && detail!.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(detail!),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),
