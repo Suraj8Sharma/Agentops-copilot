@@ -4,6 +4,7 @@
 // FR-AP-1 to FR-AP-9 + §5.2 edge cases all covered here.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -106,9 +107,13 @@ void main() {
     await tester.pumpWidget(screen());
     await tester.pumpAndSettle();
 
+    // Keep strict baselines per OS; Skia rasterizes edges differently on Linux.
+    final goldenPath = Platform.isLinux
+        ? '../golden/approval_screen_baseline_linux.png'
+        : '../golden/approval_screen_baseline.png';
     await expectLater(
       find.byType(MaterialApp),
-      matchesGoldenFile('../golden/approval_screen_baseline.png'),
+      matchesGoldenFile(goldenPath),
     );
   });
 
