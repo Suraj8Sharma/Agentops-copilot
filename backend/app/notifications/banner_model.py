@@ -147,7 +147,9 @@ prompt: plain English, no invented details, non-alarming, advisory only.
 from __future__ import annotations
 
 import logging
+import re
 
+from app.db.supabase_client import supabase_admin
 from app.llm.router import route_llm_call
 from app.notifications.banner_contract import (
     BANNER_MAX_CHARS,
@@ -224,6 +226,118 @@ BANNER_COPY_RULES: dict[str, dict[str, object]] = {
 #   - Explicit format constraint (no markdown, single line, <= 80 chars)
 #   - The model is told it is advisory — it summarises, it does not decide
 # ──────────────────────────────────────────────────────────────────────────────
+
+BANNER_INVALID_KEYWORDS = (
+    "urgent",
+    "critical",
+    "danger",
+    "warning",
+    "failed",
+    "error",
+    "alert",
+    "immediately",
+    "approve now",
+    "reject now",
+    "please approve",
+    "please reject",
+    "tap to approve",
+    "tap to reject",
+)
+
+BANNER_EVENT_MISMATCH_PATTERNS = {
+    "approval_needed": ("completed", "done", "approved", "rejected"),
+    "task_completed": ("waiting", "approval needed", "needs your approval"),
+    "digest_ready": ("approval", "reconnect", "expired"),
+    "oauth_expiring": ("expired", "critical", "danger", "broken"),
+}
+
+
+def _fallback_banner_for_event(event_type: str | None) -> str | None:
+    """Return a safe fallback banner line for a known notification type."""
+    if event_type not in BANNER_DEFAULTS:
+        return None
+    return BANNER_DEFAULTS[event_type]
+
+
+def _log_banner_execution(event: dict, *, success: bool, banner_text: str | None) -> None:
+    """Best-effort execution_logs row for banner_model. Requires a task_id if available."""
+    task_id = event.get("task_id") or event.get("related_task_id")
+    if not task_id:
+        return
+
+    payload = {
+        "event_type": event.get("type"),
+        "success": success,
+        "banner_text": banner_text,
+    }
+    try:
+        supabase_admin.table("execution_logs").insert(
+            {
+                "task_id": task_id,
+                "agent_name": "banner_model",
+                "event_type": "tool_result" if success else "error",
+                "payload": payload,
+                "latency_ms": None,
+            }
+        ).execute()
+    except Exception:
+        _logger.warning("execution_logs write failed for banner_model", exc_info=True)
+
+
+def _normalise_banner_text(value: str | None, *, truncate: bool = False) -> str | None:
+    """Reject invalid banner copy and optionally truncate long output."""
+    if value is None:
+        return None
+
+    cleaned = re.sub(r"\s+", " ", value).strip().strip("\"'`")
+    if not cleaned:
+        return None
+
+    cleaned = cleaned.replace("\u2014", "-").replace("\u2013", "-")
+    cleaned = re.sub(r"[*_`#<>\[\]{}]", "", cleaned)
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return None
+
+    lower = cleaned.lower()
+    if any(keyword in lower for keyword in BANNER_INVALID_KEYWORDS):
+        return None
+    if "\n" in cleaned or "\r" in cleaned:
+        return None
+    if len(cleaned) > BANNER_MAX_CHARS:
+        if not truncate:
+            return None
+        cleaned = cleaned[: BANNER_MAX_CHARS - 3].rstrip(" .,:;!?-")
+        if not cleaned:
+            return None
+        cleaned += "..."
+    if len(cleaned) < 10 and not cleaned.endswith("..."):
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9\s.,;:'!?/-]+", cleaned):
+        return None
+    return cleaned
+
+
+def _validate_event_match(event_type: str | None, banner_text: str | None) -> bool:
+    """Return True when the banner statement is compatible with the event type."""
+    if not event_type or not banner_text:
+        return False
+
+    lower = banner_text.lower()
+    bad_patterns = BANNER_EVENT_MISMATCH_PATTERNS.get(event_type, ())
+    if any(pattern in lower for pattern in bad_patterns):
+        return False
+
+    if event_type == "approval_needed":
+        return not any(word in lower for word in ("approved", "rejected", "completed", "done"))
+    if event_type == "task_completed":
+        return not any(
+            word in lower for word in ("waiting", "needs your approval", "approval needed")
+        )
+    if event_type == "oauth_expiring":
+        return any(word in lower for word in ("reconnect", "connection", "renew", "access"))
+    return True
+
 
 BANNER_SYSTEM_PROMPT = """
 You write short notification banner lines for an AI assistant app called AgentOps Copilot.
@@ -321,7 +435,7 @@ def build_banner_user_prompt(event: dict) -> str:
         if expires_at:
             context_lines.append(f"Expires at: {expires_at}")
 
-    rule = BANNER_COPY_RULES[notification_type]
+    rule = BANNER_COPY_RULES.get(notification_type, BANNER_COPY_RULES["approval_needed"])
     context_lines.extend(
         [
             "Copy rule for this event type:",
@@ -354,33 +468,44 @@ async def generate_banner(event: dict) -> str | None:
         event: Notification event dict. See module docstring for full shape.
 
     Returns:
-        A short banner string (<= 80 chars), or None if generation fails.
+        A short banner string (<= 80 chars), or a deterministic fallback if
+        generation fails or the model output is unusable.
     """
     event_type = event.get("type")
+    fallback_banner = _fallback_banner_for_event(event_type)
     if event_type not in NOTIFICATION_TYPES:
         _logger.error(f"Unknown notification event type: {event_type}")
         return None
 
     user_prompt = build_banner_user_prompt(event)
-
     full_prompt = f"System: {BANNER_SYSTEM_PROMPT}\n\nUser: {user_prompt}"
 
     try:
         response = await route_llm_call(prompt=full_prompt, request_type="banner")
-
         if not response or not response.text:
-            return BANNER_DEFAULTS.get(event_type)
+            _logger.warning("Banner model returned empty output; using fallback.")
+            _log_banner_execution(event, success=False, banner_text=fallback_banner)
+            return fallback_banner
 
-        banner_text = response.text.strip()
+        banner_text = _normalise_banner_text(response.text, truncate=True)
+        if not banner_text:
+            _logger.warning("Banner model output failed validation; using fallback.")
+            _log_banner_execution(event, success=False, banner_text=fallback_banner)
+            return fallback_banner
 
-        if len(banner_text) > BANNER_MAX_CHARS:
-            _logger.warning(f"Banner exceeded {BANNER_MAX_CHARS} chars, truncating.")
-            banner_text = banner_text[: BANNER_MAX_CHARS - 3] + "..."
+        if not _validate_event_match(event_type, banner_text):
+            _logger.warning(
+                "Banner model output mismatched the triggering event type; using fallback."
+            )
+            _log_banner_execution(event, success=False, banner_text=fallback_banner)
+            return fallback_banner
 
+        _log_banner_execution(event, success=True, banner_text=banner_text)
         return banner_text
     except Exception as e:
         _logger.error(f"Failed to generate banner: {e}", exc_info=True)
-        return None
+        _log_banner_execution(event, success=False, banner_text=fallback_banner)
+        return fallback_banner
 
 
 def build_banner_payload(

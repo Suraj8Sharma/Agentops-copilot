@@ -20,3 +20,8 @@ Empty model output falls back to the notification body/title in the widget
 contract. D21 evaluation cases can assert type-specific permitted fields,
 approval non-recommendation, OAuth provider visibility, and the shared length
 cap directly from `BANNER_COPY_RULES`.
+
+D29 quality pass: banner generation now rejects empty, over-long, alarmist, or
+recommendation-heavy output and falls back to deterministic per-type copy
+instead of surfacing invalid text. This keeps the banner advisory-only while
+preserving a safe user experience even when the LLM route is unavailable.
