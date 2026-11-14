@@ -12,7 +12,8 @@ import 'package:agentops_copilot/features/home/home_screen.dart';
 import 'package:agentops_copilot/features/home/task_service.dart';
 import 'package:agentops_copilot/features/task_composer/task_composer_screen.dart';
 
-AppTask mockTaskResult(String input, {String inputType = 'text', String? transcription}) {
+AppTask mockTaskResult(String input,
+    {String inputType = 'text', String? transcription}) {
   return AppTask(
     id: 'task-new-123',
     inputType: inputType,
@@ -24,9 +25,14 @@ AppTask mockTaskResult(String input, {String inputType = 'text', String? transcr
 }
 
 void main() {
+  setUp(() {
+    TaskService.fetchTasksOverride = () async => <AppTask>[];
+  });
+
   tearDown(() {
     TaskService.createTaskOverride = null;
     TaskService.createVoiceTaskOverride = null;
+    TaskService.fetchTasksOverride = null;
     TaskService.accessTokenProvider = null;
     TaskService.refreshAccessTokenProvider = null;
   });
@@ -55,7 +61,8 @@ void main() {
               body: Center(
                 child: ElevatedButton(
                   key: const Key('return-voice-result'),
-                  onPressed: () => Navigator.of(context).pop(voiceResultToReturn),
+                  onPressed: () =>
+                      Navigator.of(context).pop(voiceResultToReturn),
                   child: const Text('Return Voice Result'),
                 ),
               ),
@@ -66,7 +73,8 @@ void main() {
           settings: settings,
           builder: (_) => Scaffold(
             body: Center(
-              child: Text('Route: ${settings.name}, Args: ${settings.arguments}'),
+              child:
+                  Text('Route: ${settings.name}, Args: ${settings.arguments}'),
             ),
           ),
         );
@@ -78,11 +86,73 @@ void main() {
   testWidgets('test_composer_renders_text_mode', (tester) async {
     await tester.pumpWidget(composerApp());
 
+    expect(find.text('What can I help you get done?'), findsOneWidget);
+    expect(find.byKey(const Key('task-composer-card')), findsOneWidget);
     expect(find.byKey(const Key('task-input')), findsOneWidget);
     expect(find.byKey(const Key('submit-task')), findsOneWidget);
     expect(find.text('Submit task'), findsOneWidget);
     expect(find.byKey(const Key('switch-to-voice-mode')), findsOneWidget);
     expect(find.text('Switch to voice mode'), findsOneWidget);
+  });
+
+  testWidgets('wide composer shows task history beside the centered composer',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    TaskService.fetchTasksOverride = () async => <AppTask>[
+          AppTask(
+            id: 'history-task-1',
+            inputType: 'text',
+            rawInput: 'Summarize last week',
+            status: TaskStatus.completed,
+            createdAt: DateTime(2026, 9, 22, 10, 30),
+          ),
+        ];
+
+    await tester.pumpWidget(composerApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Task history'), findsOneWidget);
+    expect(find.text('Summarize last week'), findsOneWidget);
+    expect(find.byKey(const Key('task-history-item-history-task-1')),
+        findsOneWidget);
+    expect(find.byKey(const Key('task-input')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('task-input')),
+      'An unsent draft',
+    );
+    await tester.tap(find.byKey(const Key('new-task-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Discard draft?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('keep-draft-button')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('task-input')))
+          .controller!
+          .text,
+      'An unsent draft',
+    );
+
+    await tester.tap(find.byKey(const Key('task-history-item-history-task-1')));
+    await tester.pumpAndSettle();
+    expect(
+        find.text('Route: /plan-view, Args: history-task-1'), findsOneWidget);
+  });
+
+  testWidgets('narrow composer opens task history from the app bar',
+      (tester) async {
+    await tester.pumpWidget(composerApp());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('open-task-history')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('open-task-history')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Task history'), findsOneWidget);
+    expect(find.byKey(const Key('new-task-button')), findsOneWidget);
   });
 
   // FR-TC-2: Blocks empty or whitespace-only input without submitting.
@@ -146,7 +216,8 @@ void main() {
     // Test with navigateOnSuccess: true
     await tester.pumpWidget(composerApp(navigateOnSuccess: true));
 
-    await tester.enterText(find.byKey(const Key('task-input')), 'Deploy to staging');
+    await tester.enterText(
+        find.byKey(const Key('task-input')), 'Deploy to staging');
     await tester.tap(find.byKey(const Key('submit-task')));
     await tester.pumpAndSettle();
 
@@ -160,7 +231,8 @@ void main() {
 
     TaskService.createVoiceTaskOverride = (transcription) async {
       submittedTranscription = transcription;
-      return mockTaskResult('', inputType: 'voice', transcription: transcription);
+      return mockTaskResult('',
+          inputType: 'voice', transcription: transcription);
     };
 
     await tester.pumpWidget(composerApp(
@@ -183,7 +255,8 @@ void main() {
   });
 
   // FR-TC-6: A failed submission shows an error, keeps typed text, and allows retry.
-  testWidgets('test_composer_error_preserves_input_and_allows_retry', (tester) async {
+  testWidgets('test_composer_error_preserves_input_and_allows_retry',
+      (tester) async {
     var callCount = 0;
     const taskInput = 'Review pull request #42';
 
@@ -205,7 +278,10 @@ void main() {
     expect(find.text('Task could not be submitted'), findsOneWidget);
     expect(find.text('Network failure. Please retry.'), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byKey(const Key('task-input'))).controller!.text,
+      tester
+          .widget<TextField>(find.byKey(const Key('task-input')))
+          .controller!
+          .text,
       taskInput,
     );
 
@@ -229,7 +305,8 @@ void main() {
 
     await tester.pumpWidget(composerApp());
 
-    await tester.enterText(find.byKey(const Key('task-input')), 'Single submission test');
+    await tester.enterText(
+        find.byKey(const Key('task-input')), 'Single submission test');
     // Rapid double-tap
     await tester.tap(find.byKey(const Key('submit-task')));
     await tester.tap(find.byKey(const Key('submit-task')));
@@ -246,7 +323,8 @@ void main() {
   testWidgets('test_composer_rate_limited_shows_retry_message', (tester) async {
     const userInput = 'Generate end of quarter summary';
     TaskService.createTaskOverride = (input) async {
-      throw const TaskServiceException('Rate limit reached. Please wait a moment and try again.');
+      throw const TaskServiceException(
+          'Rate limit reached. Please wait a moment and try again.');
     };
 
     await tester.pumpWidget(composerApp());
@@ -260,7 +338,10 @@ void main() {
       findsOneWidget,
     );
     expect(
-      tester.widget<TextField>(find.byKey(const Key('task-input'))).controller!.text,
+      tester
+          .widget<TextField>(find.byKey(const Key('task-input')))
+          .controller!
+          .text,
       userInput,
     );
   });
@@ -285,7 +366,8 @@ void main() {
   });
 
   // Edge Case §5.3: Voice empty/denied returns user to text mode with clear message; no submit.
-  testWidgets('test_composer_voice_empty_transcription_not_submitted', (tester) async {
+  testWidgets('test_composer_voice_empty_transcription_not_submitted',
+      (tester) async {
     var voiceCalls = 0;
     TaskService.createVoiceTaskOverride = (transcription) async {
       voiceCalls++;
@@ -310,7 +392,8 @@ void main() {
   testWidgets('test_composer_long_input_handling', (tester) async {
     await tester.pumpWidget(composerApp());
 
-    final textField = tester.widget<TextField>(find.byKey(const Key('task-input')));
+    final textField =
+        tester.widget<TextField>(find.byKey(const Key('task-input')));
     expect(textField.maxLength, 5000);
   });
 
@@ -341,7 +424,8 @@ void main() {
     expect(find.byType(TaskComposerScreen), findsOneWidget);
 
     // Type draft text
-    await tester.enterText(find.byKey(const Key('task-input')), 'Unsaved draft text');
+    await tester.enterText(
+        find.byKey(const Key('task-input')), 'Unsaved draft text');
     await tester.pump();
 
     // Trigger back pop
@@ -351,7 +435,9 @@ void main() {
 
     // Discard draft confirmation dialog appears
     expect(find.text('Discard draft?'), findsOneWidget);
-    expect(find.text('You have unsent text. Are you sure you want to discard it?'), findsOneWidget);
+    expect(
+        find.text('You have unsent text. Are you sure you want to discard it?'),
+        findsOneWidget);
 
     // Tap Keep Editing -> stay on screen
     await tester.tap(find.byKey(const Key('keep-draft-button')));

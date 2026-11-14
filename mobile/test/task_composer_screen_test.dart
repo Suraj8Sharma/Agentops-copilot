@@ -17,8 +17,13 @@ AppTask submittedTask(String input) => AppTask(
     );
 
 void main() {
+  setUp(() {
+    TaskService.fetchTasksOverride = () async => <AppTask>[];
+  });
+
   tearDown(() {
     TaskService.createTaskOverride = null;
+    TaskService.fetchTasksOverride = null;
     TaskService.accessTokenProvider = null;
     TaskService.refreshAccessTokenProvider = null;
   });
@@ -79,7 +84,8 @@ void main() {
     );
   });
 
-  testWidgets('preserves exact input and surfaces a retryable error', (tester) async {
+  testWidgets('preserves exact input and surfaces a retryable error',
+      (tester) async {
     TaskService.createTaskOverride = (_) async {
       throw const TaskServiceException('Server unavailable (HTTP 503)');
     };
@@ -92,7 +98,10 @@ void main() {
     expect(find.text('Task could not be submitted'), findsOneWidget);
     expect(find.text('Server unavailable (HTTP 503)'), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byKey(const Key('task-input'))).controller!.text,
+      tester
+          .widget<TextField>(find.byKey(const Key('task-input')))
+          .controller!
+          .text,
       input,
     );
   });
