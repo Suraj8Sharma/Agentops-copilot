@@ -23,6 +23,7 @@ Widget tests covering the entry points of the core trust loop (`OnboardingScreen
 - `test/screens/home_test.dart`: verifies task list rendering across all seven task statuses, empty state with CTA, loading state on cold start, quick-entry routing, task tap navigation, and error state retry.
 - `test/screens/task_composer_test.dart`: verifies text submission, submit locking, voice mode handoff and transcription submission, 401 silent refresh/sign-in handoff, 429 rate limit messaging, input preservation on errors, and draft discard confirmation.
 - `test/screens/plan_view_test.dart` and `test/screens/approval_screen_test.dart`: safety-critical plan ordering, risk/status presentation, approval decisions, fail-closed states, error handling, and deterministic golden screens.
+- `test/screens/activity_log_test.dart`: audit-log rendering, newest-first ordering, fixed date/type filters, search, pagination, loading/error/empty states, and read-only behaviour.
 
 ### Running the tests
 Run the full mobile test suite:
@@ -36,9 +37,12 @@ flutter test test/screens/home_test.dart
 flutter test test/screens/task_composer_test.dart
 flutter test test/screens/plan_view_test.dart
 flutter test test/screens/approval_screen_test.dart
+flutter test test/screens/activity_log_test.dart
 ```
 
 The two Day 27 golden tests use a fixed 1080×1920 surface at 3× pixel ratio. Review any image diff before updating a baseline. To intentionally regenerate both baselines, run `flutter test --update-goldens test/screens/plan_view_test.dart test/screens/approval_screen_test.dart`; commit the resulting files under `test/golden/` with the reviewed change.
+
+Activity Log tests use service overrides, a fixed 2026 fixture clock, and the `/activity-log` response contract. Extend `ActivityLogService.fetchPageOverride` for new filters or pages; do not restore network fallbacks because a backend error must remain visible as an error state rather than looking like an empty or mock log.
 
 ### Extending screen tests
 To add coverage or test new behavior:
