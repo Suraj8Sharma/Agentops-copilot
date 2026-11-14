@@ -663,6 +663,24 @@ void main() {
   });
 
   // 401 auth error navigates to sign-in.
+  testWidgets('plan authentication error navigates to sign-in',
+      (tester) async {
+    PlanService.fetchPlanOverride = (_) async =>
+        throw const PlanAuthException('Your session has expired.');
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.light,
+      home: const PlanViewScreen(taskId: 'task-123'),
+      routes: <String, WidgetBuilder>{
+        AppRoutes.signIn: (_) =>
+            const Scaffold(body: Text('Sign In Screen')),
+      },
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign In Screen'), findsOneWidget);
+  });
+
   testWidgets('shows waiting state when plan is not found', (tester) async {
     PlanService.fetchPlanOverride =
         (_) async => throw const PlanNotFoundException('Plan not ready yet');
