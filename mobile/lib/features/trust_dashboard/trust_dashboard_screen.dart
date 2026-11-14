@@ -3,66 +3,111 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import 'trust_dashboard_service.dart';
 
-class DashboardMetricPoint {
-  const DashboardMetricPoint({required this.label, required this.value});
-
-  final String label;
-  final double value;
-}
-
-class TrustDashboardMetrics {
-  const TrustDashboardMetrics({
-    required this.latency,
-    required this.cost,
-    required this.accuracy,
-  });
-
-  final List<DashboardMetricPoint> latency;
-  final List<DashboardMetricPoint> cost;
-  final List<DashboardMetricPoint> accuracy;
-}
-
-const TrustDashboardMetrics mockTrustDashboardMetrics = TrustDashboardMetrics(
-  latency: [
-    DashboardMetricPoint(label: 'Mon', value: 1.8),
-    DashboardMetricPoint(label: 'Tue', value: 2.4),
-    DashboardMetricPoint(label: 'Wed', value: 2.1),
-    DashboardMetricPoint(label: 'Thu', value: 3.0),
-    DashboardMetricPoint(label: 'Fri', value: 2.6),
-    DashboardMetricPoint(label: 'Sat', value: 2.2),
-    DashboardMetricPoint(label: 'Sun', value: 2.0),
-  ],
-  cost: [
-    DashboardMetricPoint(label: 'Mon', value: 0.08),
-    DashboardMetricPoint(label: 'Tue', value: 0.12),
-    DashboardMetricPoint(label: 'Wed', value: 0.09),
-    DashboardMetricPoint(label: 'Thu', value: 0.15),
-    DashboardMetricPoint(label: 'Fri', value: 0.11),
-    DashboardMetricPoint(label: 'Sat', value: 0.07),
-    DashboardMetricPoint(label: 'Sun', value: 0.10),
-  ],
-  accuracy: [
-    DashboardMetricPoint(label: 'Mon', value: 94),
-    DashboardMetricPoint(label: 'Tue', value: 96),
-    DashboardMetricPoint(label: 'Wed', value: 95),
-    DashboardMetricPoint(label: 'Thu', value: 97),
-    DashboardMetricPoint(label: 'Fri', value: 96),
-    DashboardMetricPoint(label: 'Sat', value: 98),
-    DashboardMetricPoint(label: 'Sun', value: 97),
-  ],
-);
-
-class TrustDashboardScreen extends StatelessWidget {
+class TrustDashboardScreen extends StatefulWidget {
   const TrustDashboardScreen({
     super.key,
-    this.metrics = mockTrustDashboardMetrics,
+    this.metrics,
   });
 
-  final TrustDashboardMetrics metrics;
+  final TrustDashboardMetrics? metrics;
+
+  @override
+  State<TrustDashboardScreen> createState() => _TrustDashboardScreenState();
+}
+
+class _TrustDashboardScreenState extends State<TrustDashboardScreen> {
+  TrustDashboardMetrics? _metrics;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _metrics = widget.metrics;
+    if (_metrics == null) {
+      _refresh();
+    }
+  }
+
+  Future<void> _refresh() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final metrics = await TrustDashboardService.fetchMetrics();
+      if (!mounted) return;
+      setState(() {
+        _metrics = metrics;
+        _isLoading = false;
+      });
+    } on TrustDashboardException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.message;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Could not load dashboard metrics. Please try again.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  TrustDashboardMetrics get metrics => _metrics ?? const TrustDashboardMetrics(
+        latency: [],
+        cost: [],
+        accuracy: [],
+      );
 
   @override
   Widget build(BuildContext context) {
+    final safeMetrics = metrics;
+
+    if (_isLoading && _metrics == null) {
+      return const Scaffold(
+        key: Key('trust-dashboard-screen'),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: AppSpacing.md),
+              Text('Loading metrics...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Scaffold(
+        key: const Key('trust-dashboard-screen'),
+        appBar: AppBar(title: const Text('Trust Dashboard')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.screenPadding),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_errorMessage!, textAlign: TextAlign.center),
+                const SizedBox(height: AppSpacing.md),
+                OutlinedButton(
+                  onPressed: _refresh,
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       key: const Key('trust-dashboard-screen'),
       appBar: AppBar(title: const Text('Trust Dashboard')),
@@ -71,11 +116,15 @@ class TrustDashboardScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Agent performance at a glance',
-                style: Theme.of(context).textTheme.headlineMedium),
+            Text(
+              'Agent performance at a glance',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Mock data for the last 7 days. Live metrics will appear here later.',
+              safeMetrics.generatedAt == null
+                  ? 'Live metrics from the dashboard endpoint.'
+                  : 'Updated ${_formatTime(safeMetrics.generatedAt!)}',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -83,10 +132,10 @@ class TrustDashboardScreen extends StatelessWidget {
               key: const Key('latency-metric-card'),
               title: 'Latency',
               subtitle: 'p95 response time',
-              value: '${_p95(metrics.latency).toStringAsFixed(1)}s',
+              value: _formatLatencyValue(safeMetrics.latency),
               detail: 'Target: under 8s for simple tasks',
               color: AppColors.primary,
-              points: metrics.latency,
+              points: safeMetrics.latency,
               chartType: _ChartType.line,
             ),
             const SizedBox(height: AppSpacing.md),
@@ -94,35 +143,58 @@ class TrustDashboardScreen extends StatelessWidget {
               key: const Key('cost-metric-card'),
               title: 'Cost',
               subtitle: 'LLM spend',
-              value:
-                  '\$${metrics.cost.fold<double>(0, (sum, point) => sum + point.value).toStringAsFixed(2)}',
+              value: _formatCostValue(safeMetrics.cost),
               detail: 'Groq and Gemini usage',
               color: AppColors.secondary,
-              points: metrics.cost,
+              points: safeMetrics.cost,
               chartType: _ChartType.bar,
             ),
             const SizedBox(height: AppSpacing.md),
             _MetricCard(
               key: const Key('accuracy-metric-card'),
               title: 'Accuracy',
-              subtitle: 'Planner and router pass rate',
-              value: '${_average(metrics.accuracy).toStringAsFixed(0)}%',
-              detail: 'Based on mock evaluation runs',
+              subtitle: 'Eval suite pass rate',
+              value: _formatAccuracyValue(safeMetrics.accuracy),
+              detail: 'Based on the latest eval runs',
               color: AppColors.success,
-              points: metrics.accuracy,
+              points: safeMetrics.accuracy,
               chartType: _ChartType.line,
             ),
             const SizedBox(height: AppSpacing.md),
-            const _Legend(
-              key: Key('dashboard-legend'),
+            _Legend(
+              key: const Key('dashboard-legend'),
               color: AppColors.warning,
               label: 'Fallback event',
-              description: 'A rate-limit fallback will be visible when live data is connected.',
+              description: safeMetrics.fallbackEvents > 0
+                  ? '${safeMetrics.fallbackEvents} rate-limit fallback${safeMetrics.fallbackEvents == 1 ? '' : 's'} tracked.'
+                  : 'No fallback events in the current window.',
             ),
           ],
         ),
       ),
     );
+  }
+
+  static String _formatTime(DateTime value) {
+    return value.toLocal().toString().replaceFirst('.000', '').replaceFirst(':00', '');
+  }
+
+  static String _formatLatencyValue(List<DashboardMetricPoint> points) {
+    if (points.isEmpty) return 'No data yet';
+    final p95 = _p95(points);
+    return '${p95.toStringAsFixed(1)}s';
+  }
+
+  static String _formatCostValue(List<DashboardMetricPoint> points) {
+    if (points.isEmpty) return 'No data yet';
+    final total = points.fold<double>(0, (sum, point) => sum + point.value);
+    return '\$${total.toStringAsFixed(2)}';
+  }
+
+  static String _formatAccuracyValue(List<DashboardMetricPoint> points) {
+    if (points.isEmpty) return 'No data yet';
+    final avg = _average(points);
+    return '${avg.toStringAsFixed(0)}%';
   }
 
   static double _average(List<DashboardMetricPoint> points) {
