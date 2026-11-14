@@ -9,6 +9,7 @@ from app.llm.types import (  # noqa: E402
 )
 from app.notifications.banner_model import (  # noqa: E402
     BANNER_COPY_RULES,
+    BANNER_DEFAULTS,
     BANNER_MAX_CHARS,
     build_banner_user_prompt,
     generate_banner,
@@ -124,12 +125,7 @@ async def test_banner_model_groq_fallback_to_gemini():
 
 @pytest.mark.asyncio
 async def test_banner_model_all_fail():
-    """
-    Verify that banner generation fails safely when the LLM route fails.
-
-    The specification permits returning no banner line or a minimal
-    non-LLM fallback. The current implementation returns None.
-    """
+    """Verify that banner generation falls back rather than raising when the model fails."""
     with patch(
         "app.llm.router.call_groq",
         new_callable=AsyncMock,
@@ -139,7 +135,56 @@ async def test_banner_model_all_fail():
         event = {"type": "oauth_expiring"}
         banner = await generate_banner(event)
 
-        assert banner is None
+        assert banner == BANNER_DEFAULTS["oauth_expiring"]
+
+
+@pytest.mark.asyncio
+async def test_banner_model_rejects_invalid_output_and_uses_fallback():
+    mock_response = LLMResponse(
+        text="URGENT - please approve now!",
+        provider=LLMProvider.GROQ,
+        model="llama-3.1-8b-instant",
+        tokens_in=50,
+        tokens_out=12,
+        latency_ms=100,
+        rate_limited=False,
+    )
+
+    with (
+        patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq,
+        patch("app.notifications.banner_model.supabase_admin") as mock_supabase_admin,
+    ):
+        mock_groq.return_value = mock_response
+        mock_supabase_admin.table.return_value.insert.return_value.execute.return_value = None
+
+        event = {"type": "approval_needed", "task_id": "123e4567-e89b-12d3-a456-426614174000"}
+        banner = await generate_banner(event)
+
+        assert banner == BANNER_DEFAULTS["approval_needed"]
+        mock_supabase_admin.table.return_value.insert.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_banner_model_rejects_output_for_wrong_event_type():
+    mock_response = LLMResponse(
+        text="The task is completed.",
+        provider=LLMProvider.GROQ,
+        model="llama-3.1-8b-instant",
+        tokens_in=50,
+        tokens_out=8,
+        latency_ms=100,
+        rate_limited=False,
+    )
+
+    with (
+        patch("app.llm.router.call_groq", new_callable=AsyncMock) as mock_groq,
+        patch("app.llm.router.log_llm_usage"),
+    ):
+        mock_groq.return_value = mock_response
+
+        banner = await generate_banner({"type": "approval_needed"})
+
+    assert banner == BANNER_DEFAULTS["approval_needed"]
 
 
 def test_copy_rules_cover_each_contract_type_and_are_distinguishable():

@@ -31,3 +31,8 @@ types use a safe generic banner and do not crash the notification surface.
 
 Worked payloads for all four types are available as
 `MOCK_BANNER_PAYLOADS` in `backend/app/notifications/banner_contract.py`.
+
+D29 note: the banner model validates output before it is persisted. A failed or
+unsafe LLM result falls back to a deterministic neutral line for the matching
+notification type, which keeps the text advisory-only and prevents UI or push
+copy from surfacing alarming or decision-driving language.
