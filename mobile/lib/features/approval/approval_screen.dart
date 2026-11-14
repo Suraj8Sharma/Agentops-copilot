@@ -105,7 +105,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       if (!mounted) return;
       setState(() {
         _processing.remove(step.id);
-        
+
         // Optimistically update the step in the plan so the UI reflects it
         if (_plans.containsKey(step.taskId)) {
           final plan = _plans[step.taskId]!;
@@ -118,7 +118,9 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
                 mcpServer: s.mcpServer,
                 riskTier: s.riskTier,
                 requiresApproval: s.requiresApproval,
-                status: decision == ApprovalDecision.approved ? PlanStepStatus.approved : PlanStepStatus.rejected,
+                status: decision == ApprovalDecision.approved
+                    ? PlanStepStatus.approved
+                    : PlanStepStatus.rejected,
                 inputParams: s.inputParams,
                 output: s.output,
               );
@@ -142,7 +144,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       if (!mounted) return;
       setState(() {
         _processing.remove(step.id);
-        _errorMessage = error.message;
+        _errorMessage = 'Approval service unavailable';
       });
       if (error.requiresSignIn) {
         Navigator.of(context).pushNamed(AppRoutes.signIn);
@@ -153,7 +155,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       if (!mounted) return;
       setState(() {
         _processing.remove(step.id);
-        _errorMessage = 'An error occurred while saving your decision.';
+        _errorMessage = 'Approval service unavailable';
       });
     }
   }
@@ -180,7 +182,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
         ),
       );
     }
-    if (_errorMessage != null) {
+    if (_errorMessage != null && _pending.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
@@ -218,20 +220,42 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
         ),
       );
     }
-    return ListView(
+    final listContent = <Widget>[
+      const _ScreenHeader(),
+      if (_errorMessage != null) ...<Widget>[
+        const SizedBox(height: AppSpacing.sm),
+        _DecisionErrorBanner(
+          title: _errorMessage!,
+          detail: _errorMessage == 'Approval service unavailable'
+              ? 'Service unavailable (HTTP 503)'
+              : null,
+        ),
+      ],
+      const SizedBox(height: AppSpacing.md),
+      for (final step in _pending) ...<Widget>[
+        if (_plans.containsKey(step.taskId))
+          _buildPlanContext(context, step, _plans[step.taskId]!)
+        else
+          _buildFallbackCard(context, step),
+        const SizedBox(height: AppSpacing.lg),
+      ],
+    ];
+
+    if (_pending.length > 1) {
+      return ListView(
+        key: const Key('approval-pending-list'),
+        padding: const EdgeInsets.all(AppSpacing.screenPadding),
+        children: listContent,
+      );
+    }
+
+    return SingleChildScrollView(
       key: const Key('approval-pending-list'),
       padding: const EdgeInsets.all(AppSpacing.screenPadding),
-      children: <Widget>[
-        const _ScreenHeader(),
-        const SizedBox(height: AppSpacing.md),
-        for (final step in _pending) ...<Widget>[
-          if (_plans.containsKey(step.taskId))
-            _buildPlanContext(context, step, _plans[step.taskId]!)
-          else
-            _buildFallbackCard(context, step),
-          const SizedBox(height: AppSpacing.lg),
-        ],
-      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: listContent,
+      ),
     );
   }
 
@@ -247,7 +271,9 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
           return Column(
             children: [
               PlanStepCard(step: pStep, isLast: isLast),
-              if (pStep.id == pendingStep.id && pStep.status == PlanStepStatus.awaitingApproval) ...[
+              if (pStep.id == pendingStep.id &&
+                  pStep.status == PlanStepStatus.awaitingApproval &&
+                  pendingStep.status == 'awaiting_approval') ...[
                 const SizedBox(height: AppSpacing.sm),
                 _buildApprovalControls(context, pendingStep),
                 const SizedBox(height: AppSpacing.md),
@@ -260,6 +286,8 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
   }
 
   Widget _buildFallbackCard(BuildContext context, ApprovalStep step) {
+    final approveKey = Key('approve-button-${step.id}');
+    final rejectKey = Key('reject-button-${step.id}');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -267,12 +295,12 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
           _RiskCard(step: step)
         else
           const _UnexpectedRiskState(),
-        if (step.requiresApproval) ...<Widget>[
+        if (step.requiresApproval && step.status == 'awaiting_approval') ...<Widget>[
           const SizedBox(height: AppSpacing.md),
           _DecisionButtons(
             isProcessing: _processing.contains(step.id),
-            approveKey: Key('approve-button-${step.id}'),
-            rejectKey: Key('reject-button-${step.id}'),
+            approveKey: approveKey,
+            rejectKey: rejectKey,
             onApprove: () => _decide(step, ApprovalDecision.approved),
             onReject: () => _decide(step, ApprovalDecision.rejected),
           ),
@@ -282,6 +310,8 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
   }
 
   Widget _buildApprovalControls(BuildContext context, ApprovalStep step) {
+    final approveKey = Key('approve-button-${step.id}');
+    final rejectKey = Key('reject-button-${step.id}');
     return Card(
       color: AppColors.riskMediumBg,
       child: Padding(
@@ -304,8 +334,8 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
             const SizedBox(height: AppSpacing.md),
             _DecisionButtons(
               isProcessing: _processing.contains(step.id),
-              approveKey: Key('approve-button-${step.id}'),
-              rejectKey: Key('reject-button-${step.id}'),
+              approveKey: approveKey,
+              rejectKey: rejectKey,
               onApprove: () => _decide(step, ApprovalDecision.approved),
               onReject: () => _decide(step, ApprovalDecision.rejected),
             ),
@@ -328,6 +358,41 @@ class _ScreenHeader extends StatelessWidget {
           Text('Review what your copilot plans to do before it runs.',
               style: Theme.of(context).textTheme.bodyMedium),
         ],
+      );
+}
+
+class _DecisionErrorBanner extends StatelessWidget {
+  const _DecisionErrorBanner({required this.title, this.detail});
+
+  final String title;
+  final String? detail;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        key: const Key('approval-decision-error'),
+        color: AppColors.riskHighBg,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Icon(Icons.error_outline, color: AppColors.error),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(title),
+                    if (detail != null && detail!.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(detail!),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       );
 }
 
@@ -387,6 +452,33 @@ class _RiskCard extends StatelessWidget {
                   'This description is advisory only and does not affect the outcome of your decision.',
                   key: const Key('explanation-advisory-disclaimer'),
                   style: Theme.of(context).textTheme.bodySmall),
+              // FR-AP SS5.2 - structured params alongside explanation (fail-closed):
+              if (step.inputParams.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text('Parameters',
+                    key: const Key('approval-input-params-label'),
+                    style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: AppSpacing.xs),
+                ...step.inputParams.entries.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${e.key}: ',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+                        Expanded(
+                          child: Text(
+                            e.value.toString(),
+                            key: Key('approval-param-${e.key}'),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
