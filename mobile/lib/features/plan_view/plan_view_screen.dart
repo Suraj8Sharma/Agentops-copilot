@@ -601,11 +601,15 @@ class StatusChip extends StatelessWidget {
             Icon(icon, size: AppSpacing.md, color: color),
             const SizedBox(width: AppSpacing.xs),
           ],
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: color,
-                ),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: color,
+                  ),
+            ),
           ),
         ],
       ),
