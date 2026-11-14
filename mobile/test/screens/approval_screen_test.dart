@@ -93,6 +93,23 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('provided step skips fetching the pending list', (tester) async {
+    var fetchCalled = false;
+    ApprovalService.fetchPendingOverride = () async {
+      fetchCalled = true;
+      return <ApprovalStep>[];
+    };
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.light,
+      home: const ApprovalScreen(step: pendingStep),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(fetchCalled, isFalse);
+    expect(find.byKey(const Key('approve-button-step-1')), findsOneWidget);
+  });
+
   // ─── FR-AP-1 / FR-AP-9: golden baseline ───────────────────────────────────
   // Regenerate with: flutter test --update-goldens test/screens/approval_screen_test.dart
   // Any golden diff must be explained in the PR — a silent mis-render is a safety bug.
@@ -139,6 +156,56 @@ void main() {
     // Screen settled — still no decision sent.
     expect(decideCalled, isFalse);
     expect(find.byKey(const Key('approve-button-step-1')), findsOneWidget);
+  });
+
+  testWidgets('fetch auth failure routes to sign-in', (tester) async {
+    ApprovalService.fetchPendingOverride = () async {
+      throw const ApprovalServiceException(
+        'Your session has expired. Please sign in again.',
+        requiresSignIn: true,
+      );
+    };
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign In Screen'), findsOneWidget);
+  });
+
+  testWidgets('fetch service failure can be retried', (tester) async {
+    var fetchCount = 0;
+    ApprovalService.fetchPendingOverride = () async {
+      fetchCount++;
+      if (fetchCount == 1) {
+        throw const ApprovalServiceException('Temporary service failure');
+      }
+      return <ApprovalStep>[];
+    };
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Temporary service failure'), findsOneWidget);
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(fetchCount, 2);
+    expect(find.byKey(const Key('approval-empty')), findsOneWidget);
+  });
+
+  testWidgets('unexpected fetch failure shows a connection message',
+      (tester) async {
+    ApprovalService.fetchPendingOverride =
+        () async => throw StateError('offline');
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+          'Could not load approvals. Check your connection and try again.'),
+      findsOneWidget,
+    );
   });
 
   // ─── FR-AP-3: Approve sends single POST with decision: approved ────────────
@@ -212,6 +279,76 @@ void main() {
     // Both buttons present — user has not decided yet.
     expect(find.byKey(const Key('approve-button-step-1')), findsOneWidget);
     expect(find.byKey(const Key('reject-button-step-1')), findsOneWidget);
+  });
+
+  testWidgets('fallback decisions remove pending steps without plan context',
+      (tester) async {
+    const approveStep = ApprovalStep(
+      id: 'step-approve',
+      taskId: 'task-no-plan',
+      toolName: 'gmail.send_message',
+      mcpServer: 'gmail',
+      riskTier: RiskTier.high,
+      requiresApproval: true,
+      status: 'awaiting_approval',
+      explanationText: 'Approve this action.',
+    );
+    const rejectStep = ApprovalStep(
+      id: 'step-reject',
+      taskId: 'task-no-plan',
+      toolName: 'gmail.send_message',
+      mcpServer: 'gmail',
+      riskTier: RiskTier.high,
+      requiresApproval: true,
+      status: 'awaiting_approval',
+      explanationText: 'Reject this action.',
+    );
+    ApprovalService.fetchPendingOverride =
+        () async => <ApprovalStep>[approveStep, rejectStep];
+    PlanService.fetchPlanOverride =
+        (_) async => throw Exception('Plan context unavailable');
+    ApprovalService.decideOverride = (_, __) async {};
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+
+    final approveFinder = find.byKey(const Key('approve-button-step-approve'));
+    await tester.ensureVisible(approveFinder);
+    await tester.tap(approveFinder);
+    await tester.pumpAndSettle();
+
+    final rejectFinder = find.byKey(const Key('reject-button-step-reject'));
+    await tester.ensureVisible(rejectFinder);
+    await tester.tap(rejectFinder);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('approval-empty')), findsOneWidget);
+  });
+
+  testWidgets('unexpected risk state fails closed without decision controls',
+      (tester) async {
+    const unexpectedStep = ApprovalStep(
+      id: 'step-unexpected',
+      taskId: 'task-no-plan',
+      toolName: 'gmail.send_message',
+      mcpServer: 'gmail',
+      riskTier: RiskTier.high,
+      requiresApproval: false,
+      status: 'awaiting_approval',
+    );
+    ApprovalService.fetchPendingOverride =
+        () async => <ApprovalStep>[unexpectedStep];
+    PlanService.fetchPlanOverride =
+        (_) async => throw Exception('Plan context unavailable');
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('unexpected-risk-body')), findsOneWidget);
+    expect(
+        find.byKey(const Key('approve-button-step-unexpected')), findsNothing);
+    expect(
+        find.byKey(const Key('reject-button-step-unexpected')), findsNothing);
   });
 
   // ─── FR-AP-6: no pre-selected or recommended choice ───────────────────────
@@ -412,6 +549,22 @@ void main() {
     expect(find.text('APPROVED'), findsNothing);
     // Approved text nowhere on screen.
     expect(find.text('Approved'), findsNothing);
+  });
+
+  testWidgets('unexpected decision failure remains visible', (tester) async {
+    ApprovalService.fetchPendingOverride =
+        () async => <ApprovalStep>[pendingStep];
+    ApprovalService.decideOverride = (_, __) async {
+      throw StateError('offline');
+    };
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('approve-button-step-1')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Approval service unavailable'), findsOneWidget);
+    expect(find.text('APPROVED'), findsNothing);
   });
 
   // 409: screen refreshes state and notifies user.
