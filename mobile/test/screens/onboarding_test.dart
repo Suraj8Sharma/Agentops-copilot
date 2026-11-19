@@ -36,7 +36,7 @@ void main() {
 
     // Initially shows splash view with design token styling
     expect(find.text('AgentOps Copilot'), findsOneWidget);
-    expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
+    expect(find.byKey(const Key('app-logo-splash')), findsOneWidget);
 
     // Advance past splash transition
     await tester.pump(const Duration(milliseconds: 800));

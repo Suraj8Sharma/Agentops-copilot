@@ -6,18 +6,19 @@ library;
 
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
+import '../../core/widgets/app_logo.dart';
 
 /// Branded header with icon, title and subtitle — used at the top of
 /// every auth screen.
 class AuthHeader extends StatelessWidget {
   const AuthHeader({
     super.key,
-    required this.icon,
     required this.title,
     required this.subtitle,
+    this.icon,
   });
 
-  final IconData icon;
+  final IconData? icon;
   final String title;
   final String subtitle;
 
@@ -27,13 +28,11 @@ class AuthHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Container(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: AppColors.primaryLight,
-            borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-          ),
-          child: Icon(icon, color: AppColors.primary, size: AppSpacing.xl),
+        AppLogoBadge(
+          key: const Key('app-logo-auth-header'),
+          size: 48,
+          padding: AppSpacing.md,
+          fallbackIcon: icon ?? Icons.auto_awesome,
         ),
         const SizedBox(height: AppSpacing.md),
         Text(title, style: tt.headlineMedium),

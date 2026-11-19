@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'app_logo.dart';
 
 class ScreenStub extends StatelessWidget {
   const ScreenStub({
@@ -31,7 +32,12 @@ class ScreenStub extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.construction_outlined, size: 40),
+              const AppLogoBadge(
+                key: Key('app-logo-screen-stub'),
+                size: 40,
+                padding: AppSpacing.sm,
+                borderRadius: AppSpacing.buttonRadius,
+              ),
               const SizedBox(height: 12),
               Text(
                 '$title — stub',

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/router.dart';
 import '../../core/theme.dart';
+import '../../core/widgets/app_logo.dart';
 
 /// Service managing onboarding completion state.
 class OnboardingService {
@@ -158,14 +159,10 @@ class _SplashView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight,
-                  borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
-                ),
-                child: const Icon(Icons.auto_awesome,
-                    color: AppColors.primary, size: AppSpacing.xl),
+              const AppLogoBadge(
+                key: Key('app-logo-splash'),
+                size: 72,
+                padding: AppSpacing.md,
               ),
               const SizedBox(height: AppSpacing.md),
               Text('AgentOps Copilot',
