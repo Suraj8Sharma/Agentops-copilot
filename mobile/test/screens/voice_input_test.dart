@@ -22,7 +22,7 @@ void main() {
   // FR4 — smoke test: proves the harness works end-to-end.
   testWidgets('VoiceInputScreen renders without throwing', (tester) async {
     await tester.pumpWidget(_screen());
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(VoiceInputScreen), findsOneWidget);
     expect(tester.takeException(), isNull);

@@ -39,6 +39,7 @@ from app.api.routers import (
     notifications,
     oauth,
     tasks,
+    voice,
 )
 from app.db.supabase_client import probe_connection
 
@@ -97,6 +98,8 @@ app.include_router(activity.router)
 app.include_router(tasks.router)
 app.include_router(oauth.router)
 app.include_router(approvals.router)
+app.include_router(voice.router)
+app.include_router(voice.router, prefix="/api/v1")
 app.include_router(digests.router)
 app.include_router(notifications.router)
 app.include_router(dashboard.router)

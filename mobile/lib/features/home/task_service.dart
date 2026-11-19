@@ -136,6 +136,9 @@ class TaskService {
     if (createVoiceTaskOverride != null) {
       return createVoiceTaskOverride!(transcriptionText);
     }
+    if (createTaskOverride != null) {
+      return createTaskOverride!(transcriptionText);
+    }
 
     var token = await _getToken();
     var response = await _postVoiceTask(transcriptionText, token);
