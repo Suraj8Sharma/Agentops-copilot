@@ -118,8 +118,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           children: [
                             Text('Profile', style: Theme.of(context).textTheme.titleLarge),
                             const SizedBox(height: AppSpacing.md),
-                            Text('User ID: ${_profile['user_id'] ?? 'unknown'}'),
-                            const SizedBox(height: AppSpacing.sm),
                             Text('Email: ${_profile['email'] ?? 'unknown'}'),
                             const SizedBox(height: AppSpacing.sm),
                             Text('Role: ${_profile['role'] ?? 'authenticated'}'),
