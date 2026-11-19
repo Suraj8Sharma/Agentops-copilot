@@ -17,6 +17,14 @@ class _MemoryPrefsScreenState extends State<MemoryPrefsScreen> {
   bool _loading = true;
   String? _error;
 
+  String _friendlyError(Object error) {
+    final raw = error.toString().trim();
+    if (raw.startsWith('Exception: ')) {
+      return raw.substring('Exception: '.length).trim();
+    }
+    return raw;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -44,7 +52,7 @@ class _MemoryPrefsScreenState extends State<MemoryPrefsScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = _friendlyError(e);
       });
     }
   }
@@ -74,7 +82,7 @@ class _MemoryPrefsScreenState extends State<MemoryPrefsScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = _friendlyError(e));
     }
   }
 
@@ -91,7 +99,7 @@ class _MemoryPrefsScreenState extends State<MemoryPrefsScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = _friendlyError(e));
     }
   }
 
@@ -123,7 +131,23 @@ class _MemoryPrefsScreenState extends State<MemoryPrefsScreen> {
                           color: AppColors.riskHighBg,
                           borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
                         ),
-                        child: Text(_error!, style: const TextStyle(color: AppColors.error)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_error!, style: const TextStyle(color: AppColors.error)),
+                            const SizedBox(height: AppSpacing.sm),
+                            OutlinedButton(
+                              onPressed: () {
+                                setState(() {
+                                  _loading = true;
+                                  _error = null;
+                                });
+                                _loadPreferences();
+                              },
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
                       ),
                     const SizedBox(height: AppSpacing.md),
                     TextField(

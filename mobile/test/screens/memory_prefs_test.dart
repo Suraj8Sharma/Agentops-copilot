@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:agentops_copilot/core/theme.dart';
 import 'package:agentops_copilot/features/memory_prefs/memory_prefs_screen.dart';
+import 'package:agentops_copilot/features/memory_prefs/memory_prefs_service.dart';
 
 Widget _screen() => MaterialApp(
       theme: AppTheme.light,
@@ -17,6 +18,19 @@ Widget _screen() => MaterialApp(
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    MemoryPrefsService.fetchPreferencesOverride = () async => <String, dynamic>{
+          'default_meeting_length': 30,
+        };
+    MemoryPrefsService.savePreferenceOverride = null;
+    MemoryPrefsService.deletePreferenceOverride = null;
+    MemoryPrefsService.httpClientOverride = null;
+  });
+
+  tearDown(() {
+    MemoryPrefsService.fetchPreferencesOverride = null;
+    MemoryPrefsService.savePreferenceOverride = null;
+    MemoryPrefsService.deletePreferenceOverride = null;
+    MemoryPrefsService.httpClientOverride = null;
   });
 
   // FR4 — smoke test: proves the harness works end-to-end.
@@ -34,6 +48,8 @@ void main() {
 
     // The ScreenStub renders the title in the AppBar.
     expect(find.text('Memory / Preferences'), findsOneWidget);
+    expect(find.text('default_meeting_length'), findsOneWidget);
+    expect(find.text('30'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

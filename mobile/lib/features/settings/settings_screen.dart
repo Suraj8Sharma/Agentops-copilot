@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/router.dart';
 import '../../core/theme.dart';
 import '../auth/auth_service.dart';
 import 'settings_service.dart';
@@ -132,7 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: const Text('Memory / Preferences'),
                       subtitle: const Text('View and edit your saved agent memory'),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).pushNamed('/memory-prefs'),
+                      onTap: () => Navigator.of(context).pushNamed(AppRoutes.memoryPrefs),
                     ),
                     const SizedBox(height: AppSpacing.md),
                     if (_error != null)
